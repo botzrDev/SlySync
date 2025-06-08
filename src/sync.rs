@@ -496,12 +496,13 @@ mod tests {
 
     async fn create_test_config_with_folder(temp_dir: &TempDir) -> crate::config::Config {
         let config_path = temp_dir.path().join("test_config.toml");
-        let mut config = crate::config::Config::new(&config_path).await.unwrap();
+        let mut config = crate::config::Config::new();
+        config.config_file_path = config_path;
         
         // Add a sync folder
         let sync_folder = temp_dir.path().join("sync");
         fs::create_dir_all(&sync_folder).await.unwrap();
-        config.add_sync_folder(sync_folder, false).await.unwrap();
+        config.add_sync_folder(sync_folder, None).unwrap();
         
         config
     }
@@ -515,7 +516,7 @@ mod tests {
         assert!(result.is_ok());
         
         let sync_service = result.unwrap();
-        assert!(sync_service.chunk_store.chunk_count().await.unwrap() == 0);
+        assert_eq!(sync_service.chunk_store.chunk_count(), 0);
     }
 
     #[tokio::test]
@@ -811,7 +812,7 @@ mod tests {
             let sync_service = SyncService::new(config).await.unwrap();
             
             let chunk_store = sync_service.get_chunk_store();
-            assert!(chunk_store.chunk_count().await.unwrap() == 0);
+            assert_eq!(chunk_store.chunk_count(), 0);
             
             let request_manager = sync_service.get_request_manager();
             assert_eq!(request_manager.pending_request_count().await, 0);
@@ -825,7 +826,7 @@ mod tests {
         let mut sync_service = SyncService::new(config.clone()).await.unwrap();
         
         // Create a mock P2P service
-        let identity = crate::crypto::Identity::generate().await.unwrap();
+        let identity = crate::crypto::Identity::generate().unwrap();
         let p2p_service = match crate::p2p::P2PService::new(identity, config).await {
             Ok(service) => Arc::new(service),
             Err(_) => {

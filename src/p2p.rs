@@ -40,6 +40,7 @@
 use anyhow::{anyhow, Result};
 use quinn::{ClientConfig, Connection, Endpoint, ServerConfig};
 use rustls::{Certificate, PrivateKey};
+use rustls::client::ServerCertVerifier;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
@@ -583,7 +584,7 @@ mod tests {
     use tempfile::TempDir;
 
     async fn create_test_identity() -> crate::crypto::Identity {
-        crate::crypto::Identity::generate().await.unwrap()
+        crate::crypto::Identity::generate().unwrap()
     }
 
     async fn create_test_config() -> crate::config::Config {

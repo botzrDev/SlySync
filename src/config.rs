@@ -30,7 +30,7 @@ pub struct Config {
     pub sync_folders: Vec<SyncFolder>,
     
     #[serde(skip)]
-    config_file_path: PathBuf,
+    pub config_file_path: PathBuf,
 }
 
 /// Represents a folder that is being synchronized.
@@ -57,6 +57,18 @@ pub struct RemoteFolderInfo {
 }
 
 impl Config {
+    pub fn new() -> Self {
+        Self {
+            node_id: String::new(),
+            listen_port: 41337,
+            bandwidth_limit_up: None,
+            bandwidth_limit_down: None,
+            discovery_enabled: true,
+            sync_folders: Vec::new(),
+            config_file_path: PathBuf::new(),
+        }
+    }
+
     pub async fn init() -> Result<Self> {
         let config_dir = Self::config_dir()?;
         std::fs::create_dir_all(&config_dir)?;

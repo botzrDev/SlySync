@@ -16,7 +16,9 @@
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use std::error::Error;
 use std::path::PathBuf;
+use tokio::time::error::Elapsed;
 use tracing::{info, warn, error};
 use yansi::Paint;
 
@@ -528,18 +530,16 @@ mod tests {
             ).await
         });
         
-        match daemon_task.await.unwrap() {
-            Ok(_) => {
+        match daemon_task.await {
+            Ok(Ok(_)) => {
                 // Daemon completed (unlikely in 100ms)
             }
-            Err(e) => {
-                // Timeout or other error expected
-                if e.is_timeout() {
-                    // Timeout is expected - daemon was running
-                } else {
-                    // Other error, probably config-related in test environment
-                    println!("Daemon start failed (expected in test environment): {}", e);
-                }
+            Ok(Err(e)) => {
+                // Daemon failed to start
+                println!("Daemon start failed (expected in test environment): {}", e);
+            }
+            Err(_) => {
+                // Timeout is expected - daemon was running
             }
         }
     }

@@ -240,6 +240,11 @@ impl ChunkStore {
         }
     }
 
+    /// Get the total number of chunks in the store
+    pub fn chunk_count(&self) -> usize {
+        self.chunk_index.read().len()
+    }
+
     /// Clean up orphaned chunks
     pub async fn cleanup(&self) -> Result<()> {
         let now = chrono::Utc::now();
