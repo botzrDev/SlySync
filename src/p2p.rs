@@ -375,13 +375,82 @@ impl P2PService {
     async fn start_message_handler(&self) -> Result<()> {
         let mut message_rx = self.message_rx.write().await.take()
             .ok_or_else(|| anyhow!("Message handler already started"))?;
-        let this = self.clone();
+        let peers = self.peers.clone();
+        let connections = self.connections.clone();
+        let chunk_store = self.chunk_store.clone();
+        let request_manager = self.request_manager.clone();
+        let sync_service = self.sync_service.clone();
         tokio::spawn(async move {
             while let Some((peer_id, message)) = message_rx.recv().await {
-                this.handle_message(peer_id, message, &this.peers, &this.connections).await;
+                P2PService::handle_message_static(
+                    peer_id, 
+                    message, 
+                    &peers, 
+                    &connections,
+                    chunk_store.clone(),
+                    request_manager.clone(),
+                    sync_service.clone()
+                ).await;
             }
         });
         Ok(())
+    }
+    
+    async fn handle_message_static(
+        peer_id: String,
+        message: P2PMessage,
+        peers: &Arc<RwLock<HashMap<String, PeerInfo>>>,
+        connections: &Arc<RwLock<HashMap<String, PeerConnection>>>,
+        chunk_store: Option<Arc<crate::storage::ChunkStore>>,
+        request_manager: Option<Arc<crate::requests::RequestManager>>,
+        sync_service: Option<Arc<crate::sync::SyncService>>,
+    ) {
+        match message {
+            P2PMessage::ChunkRequest { hash, chunk_id } => {
+                info!("Received chunk request from {}: {:?}:{}", peer_id, hash, chunk_id);
+                if let Some(chunk_store) = &chunk_store {
+                    if let Ok(chunk) = chunk_store.get_chunk(&hash).await {
+                        let connections = connections.read().await;
+                        if let Some(connection) = connections.get(&peer_id) {
+                            let response = P2PMessage::ChunkResponse {
+                                hash,
+                                chunk_id,
+                                data: chunk,
+                            };
+                            let _ = connection.send_message(&response).await;
+                        }
+                    }
+                }
+            }
+            P2PMessage::ChunkResponse { hash, chunk_id, data } => {
+                info!("Received chunk response from {}: {:?}:{} ({} bytes)", peer_id, hash, chunk_id, data.len());
+                if let Some(request_manager) = &request_manager {
+                    // Construct a P2PResponse and pass to handle_response
+                    let response = crate::requests::P2PResponse {
+                        request_id: format!("{}_{}", hex::encode(hash), chunk_id), // TODO: Use real request_id mapping
+                        response_type: crate::requests::P2PResponseType::ChunkResponse { hash, chunk_id, data },
+                    };
+                    let _ = request_manager.handle_response(response);
+                }
+            }
+            P2PMessage::FileUpdate { path, hash, size, chunks } => {
+                info!("Received file update from {}: {} ({} bytes, {} chunks)", peer_id, path, size, chunks.len());
+                if let Some(sync_service) = &sync_service {
+                    let _ = sync_service.handle_peer_file_update(&path, hash, size, chunks, &peer_id).await;
+                }
+            }
+            P2PMessage::AuthChallenge { .. } => {
+                info!("Received auth challenge from {}", peer_id);
+                // TODO: Respond to challenge using our private key
+            }
+            P2PMessage::AuthResponse { .. } => {
+                info!("Received auth response from {}", peer_id);
+                // TODO: Verify response and complete handshake
+            }
+            P2PMessage::Announce { .. } => {
+                // Handled by discovery system
+            }
+        }
     }
     
     async fn start_mdns_discovery(&self) -> Result<()> {
