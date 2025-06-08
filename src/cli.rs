@@ -18,6 +18,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 use tracing::{info, warn, error};
+use yansi::Paint;
 
 /// Command-line interface structure for SlySync.
 /// 
@@ -363,7 +364,7 @@ mod tests {
     async fn create_test_config() -> (TempDir, crate::config::Config) {
         let temp_dir = TempDir::new().unwrap();
         let config_path = temp_dir.path().join("test_config.toml");
-        let config = crate::config::Config::new(&config_path).await.unwrap();
+        let config = crate::config::Config::init().await.unwrap();
         (temp_dir, config)
     }
 
@@ -533,7 +534,7 @@ mod tests {
             }
             Err(e) => {
                 // Timeout or other error expected
-                if e.is_elapsed() {
+                if e.is_timeout() {
                     // Timeout is expected - daemon was running
                 } else {
                     // Other error, probably config-related in test environment
