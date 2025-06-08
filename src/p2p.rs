@@ -49,6 +49,7 @@ use tokio::sync::{mpsc, RwLock};
 use tokio::time::{interval, Duration, Instant};
 use tracing::{error, info, warn};
 use uuid::Uuid;
+use rustls::client::ServerCertVerifier;
 
 /// Protocol messages exchanged between peers
 #[derive(Debug, Clone, Serialize, Deserialize)]

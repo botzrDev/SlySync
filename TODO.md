@@ -6,13 +6,13 @@ The SlySync CLI has successfully evolved from individual components to a cohesiv
 ## 🔥 High Priority - Core Functionality
 
 ### File Path Resolution
-- [ ] **Fix relative path handling in sync folders** (`sync.rs`)
+- [x] **Fix relative path handling in sync folders** (`sync.rs`)
   - Current: `get_relative_path()` method needs proper path resolution
   - Impact: File operations may fail with incorrect paths
   - Files: `src/sync.rs:341` - `get_relative_path()` method
 
 ### P2P Message Handling 
-- [ ] **Complete P2P message processing** (`p2p.rs`)
+- [x] **Complete P2P message processing** (`p2p.rs`)
   - Current: Placeholder implementations for all message types
   - Need: Actual chunk request/response handling
   - Files: `src/p2p.rs:446-477` - message handling match arms
@@ -25,12 +25,12 @@ The SlySync CLI has successfully evolved from individual components to a cohesiv
   ```
 
 ### Peer-to-Peer Chunk Transfer
-- [ ] **Implement actual chunk request/response system**
+- [x] **Implement actual chunk request/response system**
   - Current: RequestManager exists but not connected to P2P messages
   - Need: Connect `RequestManager` with `P2PService::handle_message()`
   - Files: `src/p2p.rs:254`, `src/requests.rs`
 
-- [ ] **Complete chunk verification and response flow**
+- [x] **Complete chunk verification and response flow**
   - Current: `send_request()` has placeholder response waiting
   - Need: Actual request/response matching and timeout handling
   - Files: `src/p2p.rs:477` - "Wait for and verify response"
