@@ -1,16 +1,16 @@
 [package]
-name = "synccore"
+name = "slysync"
 version = "1.0.0"
 edition = "2021"
 description = "A next-generation, peer-to-peer file synchronization CLI utility"
 license = "MIT"
-authors = ["SyncCore Team"]
-repository = "https://github.com/synccore/synccore"
+authors = ["SlySync Team"]
+repository = "https://github.com/slysync/slysync"
 keywords = ["p2p", "sync", "cli", "files", "networking"]
 categories = ["command-line-utilities", "network-programming"]
 
 [[bin]]
-name = "synccore"
+name = "slysync"
 path = "src/main.rs"
 
 [dependencies]

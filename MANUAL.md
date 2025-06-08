@@ -1,4 +1,4 @@
-# SyncCore User Manual
+# SlySync User Manual
 
 ## Table of Contents
 
@@ -13,7 +13,7 @@
 
 ## Introduction
 
-SyncCore is a next-generation, peer-to-peer file synchronization utility that allows you to sync files between devices without relying on central servers. It uses modern cryptographic protocols and efficient networking to provide secure, fast, and reliable file synchronization.
+SlySync is a next-generation, peer-to-peer file synchronization utility that allows you to sync files between devices without relying on central servers. It uses modern cryptographic protocols and efficient networking to provide secure, fast, and reliable file synchronization.
 
 ### Key Features
 
@@ -30,8 +30,8 @@ SyncCore is a next-generation, peer-to-peer file synchronization utility that al
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/synccore.git
-cd synccore
+git clone https://github.com/your-org/slysync.git
+cd slysync
 
 # Build with Cargo
 cargo build --release
@@ -49,12 +49,12 @@ cargo install --path .
 
 ## Quick Start Guide
 
-### 1. Initialize SyncCore
+### 1. Initialize SlySync
 
-First, initialize SyncCore on your device:
+First, initialize SlySync on your device:
 
 ```bash
-synccore init
+slysync init
 ```
 
 This creates your node's cryptographic identity and configuration files.
@@ -64,7 +64,7 @@ This creates your node's cryptographic identity and configuration files.
 Add a folder that you want to synchronize:
 
 ```bash
-synccore add /path/to/your/folder --name "My Documents"
+slysync add /path/to/your/folder --name "My Documents"
 ```
 
 ### 3. Generate an Invitation Code
@@ -72,19 +72,19 @@ synccore add /path/to/your/folder --name "My Documents"
 To share this folder with another device, generate an invitation code:
 
 ```bash
-synccore link
+slysync link
 ```
 
 This outputs a secure invitation code that expires in 24 hours.
 
 ### 4. Join from Another Device
 
-On the second device, initialize SyncCore and join using the invitation code:
+On the second device, initialize SlySync and join using the invitation code:
 
 ```bash
 # On the second device
-synccore init
-synccore join <invitation-code> /path/to/local/folder
+slysync init
+slysync join <invitation-code> /path/to/local/folder
 ```
 
 ### 5. Start the Daemon
@@ -92,51 +92,51 @@ synccore join <invitation-code> /path/to/local/folder
 Start the synchronization daemon on both devices:
 
 ```bash
-synccore daemon
+slysync daemon
 ```
 
 Your files are now being synchronized automatically!
 
 ## Command Reference
 
-### `synccore init`
+### `slysync init`
 
-Initialize SyncCore configuration and generate node identity.
+Initialize SlySync configuration and generate node identity.
 
 **Usage:**
 ```bash
-synccore init
+slysync init
 ```
 
 **Example:**
 ```bash
-$ synccore init
-✅ SyncCore initialized successfully!
+$ slysync init
+✅ SlySync initialized successfully!
 Node ID: ed25519_Ax7B2Cd3Ef4Gh5Ij6Kl7Mn8Op9Qr0St1Uv2Wx3Yz4
 ```
 
-### `synccore id`
+### `slysync id`
 
 Display the current node's public ID.
 
 **Usage:**
 ```bash
-synccore id
+slysync id
 ```
 
 **Example:**
 ```bash
-$ synccore id
+$ slysync id
 ed25519_Ax7B2Cd3Ef4Gh5Ij6Kl7Mn8Op9Qr0St1Uv2Wx3Yz4
 ```
 
-### `synccore add`
+### `slysync add`
 
 Add a new local folder to be synchronized.
 
 **Usage:**
 ```bash
-synccore add <path> [--name <name>]
+slysync add <path> [--name <name>]
 ```
 
 **Arguments:**
@@ -145,24 +145,24 @@ synccore add <path> [--name <name>]
 
 **Example:**
 ```bash
-$ synccore add /home/user/Documents --name "Work Documents"
+$ slysync add /home/user/Documents --name "Work Documents"
 ✅ Added folder: /home/user/Documents
    Alias: Work Documents
    Folder ID: 550e8400-e29b-41d4-a716-446655440001
 ```
 
-### `synccore link`
+### `slysync link`
 
 Generate a secure invitation code for the last-added folder.
 
 **Usage:**
 ```bash
-synccore link
+slysync link
 ```
 
 **Example:**
 ```bash
-$ synccore link
+$ slysync link
 📨 Invitation code for folder 'Work Documents' (/home/user/Documents)
 SC_INV_1_ed25519_Ax7B2Cd3Ef4Gh5Ij6Kl7Mn8Op9Qr0St1Uv2Wx3Yz4_192.168.1.100:41337_exp1654567890_sig_aB3cD4eF...
 
@@ -170,13 +170,13 @@ SC_INV_1_ed25519_Ax7B2Cd3Ef4Gh5Ij6Kl7Mn8Op9Qr0St1Uv2Wx3Yz4_192.168.1.100:41337_e
    Code expires in 24 hours for security.
 ```
 
-### `synccore join`
+### `slysync join`
 
 Join a remote sync folder using an invitation code.
 
 **Usage:**
 ```bash
-synccore join <code> <path>
+slysync join <code> <path>
 ```
 
 **Arguments:**
@@ -185,18 +185,18 @@ synccore join <code> <path>
 
 **Example:**
 ```bash
-$ synccore join SC_INV_1_ed25519_... /home/user/SharedDocs
+$ slysync join SC_INV_1_ed25519_... /home/user/SharedDocs
 ✅ Joined sync folder at: /home/user/SharedDocs
    Starting synchronization...
 ```
 
-### `synccore status`
+### `slysync status`
 
 Display status of all sync jobs.
 
 **Usage:**
 ```bash
-synccore status [--verbose]
+slysync status [--verbose]
 ```
 
 **Arguments:**
@@ -204,7 +204,7 @@ synccore status [--verbose]
 
 **Example:**
 ```bash
-$ synccore status --verbose
+$ slysync status --verbose
 📂 Sync Status
 
   Work Documents (/home/user/Documents)
@@ -220,18 +220,18 @@ $ synccore status --verbose
     Size: 12.3 GB
 ```
 
-### `synccore peers`
+### `slysync peers`
 
 List all connected peers.
 
 **Usage:**
 ```bash
-synccore peers
+slysync peers
 ```
 
 **Example:**
 ```bash
-$ synccore peers
+$ slysync peers
 🌐 Discovering Peers...
 
 Found 2 peer(s):
@@ -247,32 +247,32 @@ Found 2 peer(s):
    Last seen: just now
 ```
 
-### `synccore daemon`
+### `slysync daemon`
 
-Run the SyncCore engine as a background daemon.
+Run the SlySync engine as a background daemon.
 
 **Usage:**
 ```bash
-synccore daemon
+slysync daemon
 ```
 
 **Example:**
 ```bash
-$ synccore daemon
-🚀 SyncCore daemon starting...
+$ slysync daemon
+🚀 SlySync daemon starting...
 Node ID: ed25519_Ax7B2Cd3Ef4Gh5Ij6Kl7Mn8Op9Qr0St1Uv2Wx3Yz4
 Listening on port: 41337
-💚 SyncCore daemon is running. Press Ctrl+C to stop.
+💚 SlySync daemon is running. Press Ctrl+C to stop.
 📂 Monitoring 2 sync folder(s)
 ```
 
 ## Configuration
 
-SyncCore stores its configuration in platform-appropriate directories:
+SlySync stores its configuration in platform-appropriate directories:
 
-- **Linux**: `~/.config/synccore/`
-- **macOS**: `~/Library/Application Support/synccore/`
-- **Windows**: `%APPDATA%\synccore\`
+- **Linux**: `~/.config/slysync/`
+- **macOS**: `~/Library/Application Support/slysync/`
+- **Windows**: `%APPDATA%\slysync\`
 
 ### Configuration Files
 
@@ -282,7 +282,7 @@ SyncCore stores its configuration in platform-appropriate directories:
 
 ### Configuration Options
 
-Edit `config.toml` to customize SyncCore:
+Edit `config.toml` to customize SlySync:
 
 ```toml
 node_id = "your-node-id"
@@ -300,19 +300,19 @@ created_at = "2025-06-08T10:30:00Z"
 
 ### Environment Variables
 
-- `SYNCCORE_LOG` - Set log level (`trace`, `debug`, `info`, `warn`, `error`)
-- `SYNCCORE_CONFIG_DIR` - Override default configuration directory
+- `SLYSYNC_LOG` - Set log level (`trace`, `debug`, `info`, `warn`, `error`)
+- `SLYSYNC_CONFIG_DIR` - Override default configuration directory
 
 **Example:**
 ```bash
-SYNCCORE_LOG=debug synccore daemon
+SLYSYNC_LOG=debug slysync daemon
 ```
 
 ## Security
 
 ### Cryptographic Security
 
-SyncCore uses industry-standard cryptographic algorithms:
+SlySync uses industry-standard cryptographic algorithms:
 
 - **Ed25519** for digital signatures and node identity
 - **QUIC with TLS 1.3** for encrypted peer-to-peer communication
@@ -330,20 +330,20 @@ SyncCore uses industry-standard cryptographic algorithms:
 
 1. **Keep your identity.key file secure** - This is your node's private key
 2. **Use strong invitation codes** - Don't share invitation codes publicly
-3. **Monitor peer connections** - Use `synccore peers` to check connected nodes
-4. **Regular backups** - SyncCore is not a backup solution
+1. **Monitor peer connections** - Use `slysync peers` to check connected nodes
+2. **Regular backups** - SlySync is not a backup solution
 5. **Network security** - Use trusted networks when possible
 
 ### Threat Model
 
-SyncCore protects against:
+SlySync protects against:
 
 - ✅ Network eavesdropping (encryption)
 - ✅ Man-in-the-middle attacks (authentication)
 - ✅ Data tampering (integrity verification)
 - ✅ Unauthorized access (invitation codes)
 
-SyncCore does NOT protect against:
+SlySync does NOT protect against:
 
 - ❌ Compromised devices with access to identity.key
 - ❌ Physical access to synchronized files
@@ -353,15 +353,15 @@ SyncCore does NOT protect against:
 
 ### Common Issues
 
-#### "SyncCore not initialized"
+#### "SlySync not initialized"
 
-**Problem:** You see the error "SyncCore not initialized. Run 'synccore init' first."
+**Problem:** You see the error "SlySync not initialized. Run 'slysync init' first."
 
-**Solution:** Run `synccore init` to initialize your node.
+**Solution:** Run `slysync init` to initialize your node.
 
 #### No peers found
 
-**Problem:** `synccore peers` shows no connected peers.
+**Problem:** `slysync peers` shows no connected peers.
 
 **Solutions:**
 1. Ensure both devices are on the same network
@@ -374,14 +374,14 @@ SyncCore does NOT protect against:
 **Problem:** Files are not synchronizing between devices.
 
 **Solutions:**
-1. Check that the daemon is running: `synccore daemon`
-2. Verify peer connections: `synccore peers`
+1. Check that the daemon is running: `slysync daemon`
+2. Verify peer connections: `slysync peers`
 3. Check file permissions
 4. Look for error messages in daemon output
 
 #### High CPU usage
 
-**Problem:** SyncCore is using too much CPU.
+**Problem:** SlySync is using too much CPU.
 
 **Solutions:**
 1. Check for large files being synchronized
@@ -393,7 +393,7 @@ SyncCore does NOT protect against:
 Enable debug logging to troubleshoot issues:
 
 ```bash
-SYNCCORE_LOG=debug synccore daemon
+SLYSYNC_LOG=debug slysync daemon
 ```
 
 Common log patterns:
@@ -409,7 +409,7 @@ Common log patterns:
 2. Search existing issues on GitHub
 3. Create a new issue with:
    - Your operating system
-   - SyncCore version
+   - SlySync version
    - Configuration file (remove sensitive data)
    - Full error message and logs
 
@@ -419,17 +419,17 @@ Common log patterns:
 
 #### Linux (systemd)
 
-Create `/etc/systemd/system/synccore.service`:
+Create `/etc/systemd/system/slysync.service`:
 
 ```ini
 [Unit]
-Description=SyncCore P2P File Synchronization
+Description=SlySync P2P File Synchronization
 After=network.target
 
 [Service]
 Type=simple
 User=your-username
-ExecStart=/usr/local/bin/synccore daemon
+ExecStart=/usr/local/bin/slysync daemon
 Restart=always
 RestartSec=5
 
@@ -439,13 +439,13 @@ WantedBy=multi-user.target
 
 Enable and start:
 ```bash
-sudo systemctl enable synccore
-sudo systemctl start synccore
+sudo systemctl enable slysync
+sudo systemctl start slysync
 ```
 
 #### macOS (launchd)
 
-Create `~/Library/LaunchAgents/com.synccore.daemon.plist`:
+Create `~/Library/LaunchAgents/com.slysync.daemon.plist`:
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -453,10 +453,10 @@ Create `~/Library/LaunchAgents/com.synccore.daemon.plist`:
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.synccore.daemon</string>
+    <string>com.slysync.daemon</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/usr/local/bin/synccore</string>
+        <string>/usr/local/bin/slysync</string>
         <string>daemon</string>
     </array>
     <key>RunAtLoad</key>
@@ -469,7 +469,7 @@ Create `~/Library/LaunchAgents/com.synccore.daemon.plist`:
 
 Load the service:
 ```bash
-launchctl load ~/Library/LaunchAgents/com.synccore.daemon.plist
+launchctl load ~/Library/LaunchAgents/com.slysync.daemon.plist
 ```
 
 ### Performance Tuning
@@ -493,7 +493,7 @@ For large files (>1GB):
 #### Network Optimization
 
 - Use wired connections for initial sync of large datasets
-- Enable QoS on your router for SyncCore traffic (port 41337)
+- Enable QoS on your router for SlySync traffic (port 41337)
 - Consider separate network for sync traffic in enterprise environments
 
 ### Integration with Other Tools
@@ -511,34 +511,34 @@ node_modules/
 
 #### Monitoring
 
-Monitor SyncCore with system tools:
+Monitor SlySync with system tools:
 
 ```bash
 # Check process status
-ps aux | grep synccore
+ps aux | grep slysync
 
 # Monitor network usage
 netstat -an | grep 41337
 
 # Check disk usage
-du -h ~/.config/synccore/data/
+du -h ~/.config/slysync/data/
 ```
 
 #### Backup Integration
 
-SyncCore works well with backup tools:
+SlySync works well with backup tools:
 
 ```bash
 # Include sync folders in backups
 rsync -av /home/user/Documents/ /backup/documents/
 
-# Exclude SyncCore data directory
-rsync -av --exclude='.config/synccore/' /home/user/ /backup/home/
+# Exclude SlySync data directory
+rsync -av --exclude='.config/slysync/' /home/user/ /backup/home/
 ```
 
 ### API Integration (Future)
 
-SyncCore will support REST API for integration:
+SlySync will support REST API for integration:
 
 ```bash
 # Future: Check status via API
@@ -553,9 +553,9 @@ curl -X POST http://localhost:8080/api/v1/folders \
 
 ### Community
 
-- **GitHub**: https://github.com/your-org/synccore
-- **Issues**: https://github.com/your-org/synccore/issues
-- **Discussions**: https://github.com/your-org/synccore/discussions
+- **GitHub**: https://github.com/your-org/slysync
+- **Issues**: https://github.com/your-org/slysync/issues
+- **Discussions**: https://github.com/your-org/slysync/discussions
 
 ### Contributing
 
@@ -563,8 +563,8 @@ We welcome contributions! See CONTRIBUTING.md for guidelines.
 
 ### License
 
-SyncCore is licensed under the MIT License. See LICENSE for details.
+SlySync is licensed under the MIT License. See LICENSE for details.
 
 ---
 
-*SyncCore v1.0.0 - Last updated: June 8, 2025*
+*SlySync v1.0.0 - Last updated: June 8, 2025*

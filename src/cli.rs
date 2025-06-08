@@ -1,30 +1,30 @@
 //! # Command Line Interface
 //! 
-//! This module provides the command-line interface for SyncCore, including
+//! This module provides the command-line interface for SlySync, including
 //! argument parsing, command definitions, and command implementations.
 //! 
 //! ## Commands
 //! 
-//! - `init` - Initialize SyncCore configuration and generate node identity
+//! - `init` - Initialize SlySync configuration and generate node identity
 //! - `id` - Display the current node's public ID
 //! - `add` - Add a new local folder to be synchronized
 //! - `link` - Generate a secure invitation code for sharing folders
 //! - `join` - Join a remote sync folder using an invitation code
 //! - `status` - Display status of all sync jobs
 //! - `peers` - List all connected peers
-//! - `daemon` - Run the SyncCore engine as a background daemon
+//! - `daemon` - Run the SlySync engine as a background daemon
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 use tracing::{info, warn, error};
 
-/// Command-line interface structure for SyncCore.
+/// Command-line interface structure for SlySync.
 /// 
 /// This structure defines the main CLI parser and available subcommands
 /// using the clap derive macros for automatic argument parsing.
 #[derive(Parser)]
-#[command(name = "synccore")]
+#[command(name = "slysync")]
 #[command(about = "A next-generation, peer-to-peer file synchronization CLI utility")]
 #[command(version = "1.0.0")]
 pub struct Cli {
@@ -32,13 +32,13 @@ pub struct Cli {
     pub command: Commands,
 }
 
-/// Available CLI commands for SyncCore.
+/// Available CLI commands for SlySync.
 /// 
 /// Each command represents a different operation that can be performed
-/// with the SyncCore application, from initialization to daemon operation.
+/// with the SlySync application, from initialization to daemon operation.
 #[derive(Subcommand)]
 pub enum Commands {
-    /// Initialize SyncCore configuration and generate node identity
+    /// Initialize SlySync configuration and generate node identity
     Init,
     
     /// Display the current node's public ID
@@ -74,11 +74,11 @@ pub enum Commands {
     /// List all connected peers
     Peers,
     
-    /// Run the SyncCore engine as a background daemon
+    /// Run the SlySync engine as a background daemon
     Daemon,
 }
 
-/// Initialize SyncCore configuration and generate node identity.
+/// Initialize SlySync configuration and generate node identity.
 /// 
 /// This command sets up the initial configuration directory, generates
 /// a cryptographic identity for this node, and prepares the system
@@ -89,7 +89,7 @@ pub enum Commands {
 /// Returns `Ok(())` on successful initialization, or an error if
 /// configuration creation or identity generation fails.
 pub async fn init() -> Result<()> {
-    tracing::info!("Initializing SyncCore...");
+    tracing::info!("Initializing SlySync...");
     
     // Initialize configuration
     let config = crate::config::Config::init().await?;
@@ -101,7 +101,7 @@ pub async fn init() -> Result<()> {
     tracing::info!("Node identity saved to: {}", config.identity_path().display());
     tracing::info!("Node ID: {}", identity.public_key_hex());
     
-    println!("✅ SyncCore initialized successfully!");
+    println!("✅ SlySync initialized successfully!");
     println!("Node ID: {}", identity.public_key_hex());
     
     Ok(())
@@ -109,7 +109,7 @@ pub async fn init() -> Result<()> {
 
 /// Display the current node's public ID.
 /// 
-/// Shows the Ed25519 public key that uniquely identifies this SyncCore node.
+/// Shows the Ed25519 public key that uniquely identifies this SlySync node.
 /// This ID is used by other peers to verify the authenticity of this node.
 pub async fn show_id() -> Result<()> {
     let config = crate::config::Config::load().await?;
@@ -172,7 +172,7 @@ pub async fn generate_invitation() -> Result<()> {
     let config = crate::config::Config::load().await?;
     
     if config.sync_folders().is_empty() {
-        anyhow::bail!("No folders to sync. Add a folder first with 'synccore add <path>'");
+        anyhow::bail!("No folders to sync. Add a folder first with 'slysync add <path>'");
     }
     
     // Get the last added folder
@@ -229,7 +229,7 @@ pub async fn show_status(verbose: bool) -> Result<()> {
     
     if config.sync_folders().is_empty() {
         println!("No folders being synchronized.");
-        println!("Add a folder with: synccore add <path>");
+        println!("Add a folder with: slysync add <path>");
         return Ok(());
     }
     
@@ -269,9 +269,9 @@ pub async fn show_peers() -> Result<()> {
     if peers.is_empty() {
         println!("No peers found.");
         println!("💡 Tips:");
-        println!("  - Make sure other SyncCore nodes are running on your network");
-        println!("  - Use 'synccore link' to generate an invitation code");
-        println!("  - Use 'synccore join <code>' to connect to a specific peer");
+        println!("  - Make sure other SlySync nodes are running on your network");
+        println!("  - Use 'slysync link' to generate an invitation code");
+        println!("  - Use 'slysync join <code>' to connect to a specific peer");
     } else {
         println!("Found {} peer(s):\n", peers.len());
         
@@ -291,12 +291,12 @@ pub async fn show_peers() -> Result<()> {
 }
 
 pub async fn run_daemon() -> Result<()> {
-    info!("Starting SyncCore daemon...");
+    info!("Starting SlySync daemon...");
     
     let config = crate::config::Config::load().await?;
     let identity = crate::crypto::Identity::load_or_generate(&config.identity_path())?;
     
-    println!("🚀 SyncCore daemon starting...");
+    println!("🚀 SlySync daemon starting...");
     println!("Node ID: {}", identity.public_key_hex());
     println!("Listening on port: {}", config.listen_port);
     
@@ -316,7 +316,7 @@ pub async fn run_daemon() -> Result<()> {
         }
     });
     
-    println!("💚 SyncCore daemon is running. Press Ctrl+C to stop.");
+    println!("💚 SlySync daemon is running. Press Ctrl+C to stop.");
     println!("📂 Monitoring {} sync folder(s)", config.sync_folders().len());
     
     // Start peer discovery
@@ -332,7 +332,7 @@ pub async fn run_daemon() -> Result<()> {
     // Wait for shutdown signal
     tokio::signal::ctrl_c().await?;
     
-    println!("\n🛑 SyncCore daemon stopping...");
+    println!("\n🛑 SlySync daemon stopping...");
     sync_handle.abort();
     
     Ok(())
@@ -372,12 +372,12 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         
         // Set a custom config path for testing
-        std::env::set_var("SYNCCORE_CONFIG_DIR", temp_dir.path());
+        std::env::set_var("SLYSYNC_CONFIG_DIR", temp_dir.path());
         
         let result = init().await;
         
         // Clean up environment variable
-        std::env::remove_var("SYNCCORE_CONFIG_DIR");
+        std::env::remove_var("SLYSYNC_CONFIG_DIR");
         
         // Note: This may fail if init() doesn't use environment variables
         // The test mainly checks that the function doesn't panic
@@ -570,17 +570,17 @@ mod tests {
         use clap::Parser;
         
         // Test init command
-        let args = vec!["synccore", "init"];
+        let args = vec!["slysync", "init"];
         let cli = Cli::try_parse_from(args).unwrap();
         assert!(matches!(cli.command, Commands::Init));
         
         // Test id command
-        let args = vec!["synccore", "id"];
+        let args = vec!["slysync", "id"];
         let cli = Cli::try_parse_from(args).unwrap();
         assert!(matches!(cli.command, Commands::Id));
         
         // Test add command
-        let args = vec!["synccore", "add", "/test/path"];
+        let args = vec!["slysync", "add", "/test/path"];
         let cli = Cli::try_parse_from(args).unwrap();
         match cli.command {
             Commands::Add { path, name } => {
@@ -591,7 +591,7 @@ mod tests {
         }
         
         // Test add command with name
-        let args = vec!["synccore", "add", "/test/path", "--name", "my_folder"];
+        let args = vec!["slysync", "add", "/test/path", "--name", "my_folder"];
         let cli = Cli::try_parse_from(args).unwrap();
         match cli.command {
             Commands::Add { path, name } => {
@@ -602,12 +602,12 @@ mod tests {
         }
         
         // Test link command
-        let args = vec!["synccore", "link"];
+        let args = vec!["slysync", "link"];
         let cli = Cli::try_parse_from(args).unwrap();
         assert!(matches!(cli.command, Commands::Link));
         
         // Test join command
-        let args = vec!["synccore", "join", "invitation_code_123", "/local/path"];
+        let args = vec!["slysync", "join", "invitation_code_123", "/local/path"];
         let cli = Cli::try_parse_from(args).unwrap();
         match cli.command {
             Commands::Join { code, path } => {
@@ -618,7 +618,7 @@ mod tests {
         }
         
         // Test status command
-        let args = vec!["synccore", "status"];
+        let args = vec!["slysync", "status"];
         let cli = Cli::try_parse_from(args).unwrap();
         match cli.command {
             Commands::Status { verbose } => {
@@ -628,7 +628,7 @@ mod tests {
         }
         
         // Test status command with verbose
-        let args = vec!["synccore", "status", "--verbose"];
+        let args = vec!["slysync", "status", "--verbose"];
         let cli = Cli::try_parse_from(args).unwrap();
         match cli.command {
             Commands::Status { verbose } => {
@@ -638,12 +638,12 @@ mod tests {
         }
         
         // Test peers command
-        let args = vec!["synccore", "peers"];
+        let args = vec!["slysync", "peers"];
         let cli = Cli::try_parse_from(args).unwrap();
         assert!(matches!(cli.command, Commands::Peers));
         
         // Test daemon command
-        let args = vec!["synccore", "daemon"];
+        let args = vec!["slysync", "daemon"];
         let cli = Cli::try_parse_from(args).unwrap();
         assert!(matches!(cli.command, Commands::Daemon));
     }
@@ -653,17 +653,17 @@ mod tests {
         use clap::Parser;
         
         // Test missing required argument
-        let args = vec!["synccore", "add"];
+        let args = vec!["slysync", "add"];
         let result = Cli::try_parse_from(args);
         assert!(result.is_err());
         
         // Test missing required argument for join
-        let args = vec!["synccore", "join", "code_only"];
+        let args = vec!["slysync", "join", "code_only"];
         let result = Cli::try_parse_from(args);
         assert!(result.is_err());
         
         // Test unknown command
-        let args = vec!["synccore", "unknown"];
+        let args = vec!["slysync", "unknown"];
         let result = Cli::try_parse_from(args);
         assert!(result.is_err());
     }

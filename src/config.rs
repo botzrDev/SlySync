@@ -1,13 +1,13 @@
 //! # Configuration Management
 //! 
-//! This module handles SyncCore's configuration system, including:
+//! This module handles SlySync's configuration system, including:
 //! - TOML-based configuration files
 //! - Sync folder management
 //! - Node settings and preferences
 //! - Persistent storage of application state
 //! 
 //! The configuration is stored in a platform-appropriate directory
-//! (e.g., `~/.config/synccore/` on Linux) and includes both node-level
+//! (e.g., `~/.config/slysync/` on Linux) and includes both node-level
 //! settings and per-folder synchronization configurations.
 
 use anyhow::Result;

@@ -1,6 +1,6 @@
-//! # SyncCore CLI Application
-//! 
-//! Main entry point for the SyncCore peer-to-peer file synchronization utility.
+//! # SlySync CLI Application
+//!
+//! Main entry point for the SlySync peer-to-peer file synchronization utility.
 //! This application provides a command-line interface for managing file synchronization
 //! across multiple devices without requiring central servers.
 
@@ -18,7 +18,7 @@ mod sync;
 
 use cli::{Cli, Commands};
 
-/// Main entry point for the SyncCore application.
+/// Main entry point for the SlySync application.
 /// 
 /// This function sets up logging, parses command line arguments, and dispatches
 /// to the appropriate command handler based on user input.
@@ -28,7 +28,7 @@ async fn main() -> Result<()> {
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "synccore=info".into()),
+                .unwrap_or_else(|_| "slysync=info".into()),
         )
         .with(tracing_subscriber::fmt::layer())
         .init();

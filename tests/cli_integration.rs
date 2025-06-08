@@ -1,4 +1,4 @@
-//! Integration tests for the SyncCore CLI commands
+//! Integration tests for the SlySync CLI commands
 //! 
 //! These tests verify that CLI commands work correctly end-to-end,
 //! including file system operations, configuration management, and
@@ -17,14 +17,14 @@ fn test_cli_init_command() {
     // Set custom config directory
     let output = Command::new("cargo")
         .args(&["run", "--", "init"])
-        .env("SYNCCORE_CONFIG_DIR", temp_dir.path())
+        .env("SLYSYNC_CONFIG_DIR", temp_dir.path())
         .output();
     
     match output {
         Ok(result) => {
             if result.status.success() {
                 let stdout = String::from_utf8_lossy(&result.stdout);
-                assert!(stdout.contains("SyncCore initialized successfully"));
+                assert!(stdout.contains("SlySync initialized successfully"));
                 assert!(stdout.contains("Node ID:"));
             } else {
                 // Command may fail in CI environment
@@ -47,7 +47,7 @@ fn test_cli_add_command() {
     
     let output = Command::new("cargo")
         .args(&["run", "--", "add", sync_dir.to_str().unwrap()])
-        .env("SYNCCORE_CONFIG_DIR", temp_dir.path())
+        .env("SLYSYNC_CONFIG_DIR", temp_dir.path())
         .output();
     
     match output {
@@ -202,6 +202,6 @@ fn test_cli_version() {
     
     if output.status.success() {
         let stdout = String::from_utf8_lossy(&output.stdout);
-        assert!(stdout.contains("synccore") || stdout.contains("1.0"));
+        assert!(stdout.contains("slysync") || stdout.contains("1.0"));
     }
 }

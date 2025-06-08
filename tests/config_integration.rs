@@ -13,11 +13,11 @@ async fn test_config_creation_and_loading() {
     let config_path = temp_dir.path().join("test_config.toml");
     
     // Create new config
-    let config = synccore::config::Config::new(&config_path).await.unwrap();
+    let config = slysync::config::Config::new(&config_path).await.unwrap();
     assert!(config_path.exists());
     
     // Load existing config
-    let loaded_config = synccore::config::Config::load_from(&config_path).await.unwrap();
+    let loaded_config = slysync::config::Config::load_from(&config_path).await.unwrap();
     assert_eq!(config.listen_port, loaded_config.listen_port);
 }
 
@@ -25,7 +25,7 @@ async fn test_config_creation_and_loading() {
 async fn test_config_folder_management() {
     let temp_dir = TempDir::new().unwrap();
     let config_path = temp_dir.path().join("test_config.toml");
-    let mut config = synccore::config::Config::new(&config_path).await.unwrap();
+    let mut config = slysync::config::Config::new(&config_path).await.unwrap();
     
     // Create test directories
     let folder1 = temp_dir.path().join("folder1");
@@ -45,7 +45,7 @@ async fn test_config_folder_management() {
     
     // Save and reload
     config.save().await.unwrap();
-    let reloaded = synccore::config::Config::load_from(&config_path).await.unwrap();
+    let reloaded = slysync::config::Config::load_from(&config_path).await.unwrap();
     assert_eq!(reloaded.sync_folders().len(), 2);
 }
 
@@ -53,7 +53,7 @@ async fn test_config_folder_management() {
 async fn test_config_data_directory() {
     let temp_dir = TempDir::new().unwrap();
     let config_path = temp_dir.path().join("test_config.toml");
-    let config = synccore::config::Config::new(&config_path).await.unwrap();
+    let config = slysync::config::Config::new(&config_path).await.unwrap();
     
     let data_dir = config.data_dir().unwrap();
     assert!(data_dir.exists());
@@ -64,7 +64,7 @@ async fn test_config_data_directory() {
 async fn test_config_identity_path() {
     let temp_dir = TempDir::new().unwrap();
     let config_path = temp_dir.path().join("test_config.toml");
-    let config = synccore::config::Config::new(&config_path).await.unwrap();
+    let config = slysync::config::Config::new(&config_path).await.unwrap();
     
     let identity_path = config.identity_path();
     assert!(identity_path.to_string_lossy().contains("identity"));
@@ -74,7 +74,7 @@ async fn test_config_identity_path() {
 async fn test_config_default_values() {
     let temp_dir = TempDir::new().unwrap();
     let config_path = temp_dir.path().join("test_config.toml");
-    let config = synccore::config::Config::new(&config_path).await.unwrap();
+    let config = slysync::config::Config::new(&config_path).await.unwrap();
     
     // Check default values
     assert!(config.listen_port > 0);
@@ -86,7 +86,7 @@ async fn test_config_default_values() {
 async fn test_config_serialization() {
     let temp_dir = TempDir::new().unwrap();
     let config_path = temp_dir.path().join("test_config.toml");
-    let mut config = synccore::config::Config::new(&config_path).await.unwrap();
+    let mut config = slysync::config::Config::new(&config_path).await.unwrap();
     
     // Add some data
     let test_folder = temp_dir.path().join("test_sync");
@@ -108,7 +108,7 @@ async fn test_config_serialization() {
 #[tokio::test]
 async fn test_config_invalid_path() {
     let invalid_path = PathBuf::from("/invalid/path/that/cannot/be/created/config.toml");
-    let result = synccore::config::Config::new(&invalid_path).await;
+    let result = slysync::config::Config::new(&invalid_path).await;
     
     // Should fail gracefully
     assert!(result.is_err());
@@ -120,10 +120,10 @@ async fn test_config_concurrent_access() {
     let config_path = temp_dir.path().join("concurrent_config.toml");
     
     // Create initial config
-    let _config1 = synccore::config::Config::new(&config_path).await.unwrap();
+    let _config1 = slysync::config::Config::new(&config_path).await.unwrap();
     
     // Load same config from another instance
-    let _config2 = synccore::config::Config::load_from(&config_path).await.unwrap();
+    let _config2 = slysync::config::Config::load_from(&config_path).await.unwrap();
     
     // Both should work without conflicts
     assert!(config_path.exists());

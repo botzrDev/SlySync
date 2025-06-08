@@ -1,6 +1,6 @@
-# SyncCore CLI
+# SlySync CLI
 
-A next-generation, peer-to-peer file synchronization CLI utility built in Rust. SyncCore provides secure, decentralized file synchronization without relying on central servers.
+A next-generation, peer-to-peer file synchronization CLI utility built in Rust. SlySync provides secure, decentralized file synchronization without relying on central servers.
 
 ## 🚀 Features
 
@@ -18,8 +18,8 @@ A next-generation, peer-to-peer file synchronization CLI utility built in Rust. 
 
 ```bash
 # Clone the repository
-git clone https://github.com/synccore/synccore.git
-cd synccore
+git clone https://github.com/slysync/slysync.git
+cd slysync
 
 # Build and install
 cargo build --release
@@ -28,14 +28,14 @@ cargo install --path .
 
 ### Pre-built Binaries
 
-Download the latest release from [GitHub Releases](https://github.com/synccore/synccore/releases).
+Download the latest release from [GitHub Releases](https://github.com/slysync/slysync/releases).
 
 ## 🎯 Quick Start
 
-### 1. Initialize SyncCore
+### 1. Initialize SlySync
 
 ```bash
-synccore init
+slysync init
 ```
 
 This creates your node identity and configuration files.
@@ -43,13 +43,13 @@ This creates your node identity and configuration files.
 ### 2. Add a Folder to Sync
 
 ```bash
-synccore add /path/to/your/folder --name "MyProject"
+slysync add /path/to/your/folder --name "MyProject"
 ```
 
 ### 3. Generate an Invitation Code
 
 ```bash
-synccore link
+slysync link
 ```
 
 Share this code with peers who should have access to your folder.
@@ -57,47 +57,47 @@ Share this code with peers who should have access to your folder.
 ### 4. Join a Sync on Another Device
 
 ```bash
-synccore join <invitation-code> /path/to/local/folder
+slysync join <invitation-code> /path/to/local/folder
 ```
 
 ### 5. Start the Daemon
 
 ```bash
-synccore daemon
+slysync daemon
 ```
 
-This runs SyncCore in the background, continuously synchronizing your folders.
+This runs SlySync in the background, continuously synchronizing your folders.
 
 ## 📖 Commands
 
 ### Core Commands
 
-- `synccore init` - Initialize configuration and generate node identity
-- `synccore id` - Display your node's public ID
-- `synccore add <path> [--name <alias>]` - Add a folder to synchronize
-- `synccore link` - Generate invitation code for the last-added folder
-- `synccore join <code> <path>` - Join a remote sync using invitation code
-- `synccore status [--verbose]` - Show sync status and statistics
-- `synccore peers` - List connected peers
-- `synccore daemon` - Run as background service
+- `slysync init` - Initialize configuration and generate node identity
+- `slysync id` - Display your node's public ID
+- `slysync add <path> [--name <alias>]` - Add a folder to synchronize
+- `slysync link` - Generate invitation code for the last-added folder
+- `slysync join <code> <path>` - Join a remote sync using invitation code
+- `slysync status [--verbose]` - Show sync status and statistics
+- `slysync peers` - List connected peers
+- `slysync daemon` - Run as background service
 
 ### Examples
 
 ```bash
 # Add multiple folders
-synccore add ~/Documents --name "Documents"
-synccore add ~/Projects --name "Code"
+slysync add ~/Documents --name "Documents"
+slysync add ~/Projects --name "Code"
 
 # Check status
-synccore status --verbose
+slysync status --verbose
 
 # Run in background
-synccore daemon
+slysync daemon
 ```
 
 ## ⚙️ Configuration
 
-Configuration is stored in `~/.config/synccore/config.toml`:
+Configuration is stored in `~/.config/slysync/config.toml`:
 
 ```toml
 node_id = "abc123..."
@@ -123,7 +123,7 @@ created_at = "2025-06-08T10:00:00Z"
 
 ## 🏗️ Architecture
 
-SyncCore is built with the following key components:
+SlySync is built with the following key components:
 
 - **CLI Module**: Command-line interface using `clap`
 - **P2P Module**: QUIC-based networking with `quinn` and `rustls`
@@ -151,7 +151,7 @@ cargo build --release
 cargo test
 
 # Run with logging
-RUST_LOG=synccore=debug cargo run -- daemon
+RUST_LOG=slysync=debug cargo run -- daemon
 ```
 
 ### Project Structure
@@ -202,10 +202,10 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📞 Support
 
-- 📖 [Documentation](https://docs.synccore.dev)
-- 🐛 [Issue Tracker](https://github.com/synccore/synccore/issues)
-- 💬 [Discussions](https://github.com/synccore/synccore/discussions)
-- 📧 Email: support@synccore.dev
+- 📖 [Documentation](https://docs.slysync.dev)
+- 🐛 [Issue Tracker](https://github.com/slysync/slysync/issues)
+- 💬 [Discussions](https://github.com/slysync/slysync/discussions)
+- 📧 Email: support@slysync.dev
 
 ## 🙏 Acknowledgments
 

@@ -1,7 +1,7 @@
-# SyncCore CLI - TODO & Development Roadmap
+# SlySync CLI - TODO & Development Roadmap
 
 ## 🚀 Current Status
-The SyncCore CLI has successfully evolved from individual components to a cohesive, working file synchronization system with enterprise-grade architecture. The core systems are integrated and functional, but several key features need completion to achieve full P2P file synchronization.
+The SlySync CLI has successfully evolved from individual components to a cohesive, working file synchronization system with enterprise-grade architecture. The core systems are integrated and functional, but several key features need completion to achieve full P2P file synchronization.
 
 ## 🔥 High Priority - Core Functionality
 
@@ -60,7 +60,7 @@ The SyncCore CLI has successfully evolved from individual components to a cohesi
 - [ ] **Complete invitation code generation** (`crypto.rs:109-112`)
   - Current: Placeholder values for peer_id, address, signature
   - Need: Generate actual cryptographic invitation codes
-  - Impact: `synccore link` and `synccore join` commands won't work
+  - Impact: `slysync link` and `slysync join` commands won't work
 
 - [ ] **Implement invitation signature verification** (`crypto.rs:135`)
   - Current: "TODO: Verify signature" comment
