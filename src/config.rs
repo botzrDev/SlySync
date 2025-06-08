@@ -31,6 +31,8 @@ pub struct Config {
     
     #[serde(skip)]
     pub config_file_path: PathBuf,
+    #[serde(skip)]
+    pub test_data_dir: Option<PathBuf>, // Only used in tests for isolation
 }
 
 /// Represents a folder that is being synchronized.
@@ -66,6 +68,7 @@ impl Config {
             discovery_enabled: true,
             sync_folders: Vec::new(),
             config_file_path: PathBuf::new(),
+            test_data_dir: None,
         }
     }
 
@@ -83,6 +86,7 @@ impl Config {
             discovery_enabled: true,
             sync_folders: Vec::new(),
             config_file_path: config_file.clone(),
+            test_data_dir: None,
         };
         
         config.save().await?;
@@ -151,6 +155,9 @@ impl Config {
     }
     
     pub fn data_dir(&self) -> Result<PathBuf> {
+        if let Some(ref test_dir) = self.test_data_dir {
+            return Ok(test_dir.clone());
+        }
         let config_dir = Self::config_dir()?;
         Ok(config_dir.join("data"))
     }
@@ -182,6 +189,7 @@ mod tests {
             discovery_enabled: true,
             sync_folders: Vec::new(),
             config_file_path: config_file,
+            test_data_dir: None,
         };
         
         (config, temp_dir)
@@ -254,6 +262,7 @@ mod tests {
                 }
             ],
             config_file_path: PathBuf::from("/test/config.toml"),
+            test_data_dir: None,
         };
         
         let folders = config.sync_folders();
@@ -271,6 +280,7 @@ mod tests {
             discovery_enabled: true,
             sync_folders: Vec::new(),
             config_file_path: PathBuf::from("/test/config.toml"),
+            test_data_dir: None,
         };
         
         assert_eq!(config.config_path(), Path::new("/test/config.toml"));

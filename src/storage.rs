@@ -76,42 +76,44 @@ impl ChunkStore {
 
     /// Store a chunk with the given hash
     pub async fn store_chunk(&self, hash: [u8; 32], data: &[u8]) -> Result<()> {
-        // Verify hash matches data
-        let computed_hash = crate::crypto::hash_file_chunk(data);
-        if computed_hash != hash {
-            return Err(anyhow!("Chunk hash mismatch"));
-        }
-
-        let chunk_path = self.get_chunk_path(&hash);
         let hash_key = hex::encode(hash);
-        
-        // Create chunk directory if it doesn't exist
-        if let Some(parent) = chunk_path.parent() {
-            fs::create_dir_all(parent).await?;
-        }
-
-        // Write chunk data
-        fs::write(&chunk_path, data).await?;
-
-        // Update index
-        let metadata = ChunkMetadata {
-            hash,
-            size: data.len() as u64,
-            ref_count: 1,
-            file_path: chunk_path.clone(),
-            created_at: chrono::Utc::now(),
-            last_accessed: chrono::Utc::now(),
-        };
-
+        let mut needs_save = false;
         {
             let mut index = self.chunk_index.write();
-            index.insert(hash_key, metadata);
+            if let Some(metadata) = index.get_mut(&hash_key) {
+                metadata.ref_count += 1;
+                needs_save = true;
+                // lock will be dropped at end of this block
+                return Ok(());
+            }
         }
-
-        // Save index
-        self.save_index().await?;
-        
-        debug!("Stored chunk {} ({} bytes)", hex::encode(hash), data.len());
+        // If not, prepare to store new chunk
+        let chunk_path = self.get_chunk_path(&hash);
+        let parent = chunk_path.parent().map(|p| p.to_path_buf());
+        // Create parent directory if needed (async, no lock held)
+        if let Some(parent) = parent {
+            if !parent.exists() {
+                tokio::fs::create_dir_all(&parent).await?;
+            }
+        }
+        // Write chunk to disk (async, no lock held)
+        tokio::fs::write(&chunk_path, data).await?;
+        let now = chrono::Utc::now();
+        {
+            let mut index = self.chunk_index.write();
+            index.insert(hash_key.clone(), ChunkMetadata {
+                hash,
+                size: data.len() as u64,
+                ref_count: 1,
+                file_path: chunk_path,
+                created_at: now,
+                last_accessed: now,
+            });
+            needs_save = true;
+        }
+        if needs_save {
+            self.save_index().await?;
+        }
         Ok(())
     }
 

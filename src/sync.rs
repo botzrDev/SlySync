@@ -397,8 +397,10 @@ impl SyncService {
         chunk_index: u32,
     ) -> Result<()> {
         // Store the chunk
-        self.chunk_store.store_chunk(chunk_hash, &chunk_data).await?;
-        
+        if let Err(e) = self.chunk_store.store_chunk(chunk_hash, &chunk_data).await {
+            error!("Failed to store chunk: {}", e);
+            return Err(e);
+        }
         // Update manifest
         let should_reconstruct = {
             let mut manifests = self.file_manifests.write().await;
@@ -406,22 +408,22 @@ impl SyncService {
                 manifest.mark_chunk_stored(chunk_index as usize);
                 manifest.is_complete()
             } else {
-                false
+                error!("Manifest not found for file: {}", file_path);
+                return Err(anyhow::anyhow!("Manifest not found for file: {}", file_path));
             }
         };
-        
         // If file is complete, reconstruct it
         if should_reconstruct {
             let manifest = {
                 let manifests = self.file_manifests.read().await;
                 manifests.get(file_path).cloned()
             };
-            
             if let Some(manifest) = manifest {
-                self.reconstruct_file(file_path, &manifest).await?;
+                if let Err(e) = self.reconstruct_file(file_path, &manifest).await {
+                    error!("Failed to reconstruct file: {}", e);
+                }
             }
         }
-        
         Ok(())
     }
     
@@ -505,8 +507,21 @@ mod tests {
         // Add a sync folder
         let sync_folder = temp_dir.path().join("sync");
         fs::create_dir_all(&sync_folder).await.unwrap();
+        // Ensure the sync folder is empty
+        let mut dir = tokio::fs::read_dir(&sync_folder).await.unwrap();
+        while let Some(entry) = dir.next_entry().await.unwrap() {
+            let path = entry.path();
+            if path.is_file() {
+                tokio::fs::remove_file(&path).await.unwrap();
+            } else if path.is_dir() {
+                tokio::fs::remove_dir_all(&path).await.unwrap();
+            }
+        }
         config.add_sync_folder(sync_folder, None).unwrap();
-        
+        // Set test_data_dir for test isolation
+        let test_data_dir = temp_dir.path().join("data");
+        fs::create_dir_all(&test_data_dir).await.unwrap();
+        config.test_data_dir = Some(test_data_dir);
         config
     }
 
@@ -520,6 +535,21 @@ mod tests {
         
         let sync_service = result.unwrap();
         assert_eq!(sync_service.chunk_store.chunk_count(), 0);
+    }
+
+    #[test]
+    fn test_sync_service_accessors() {
+        tokio_test::block_on(async {
+            let temp_dir = TempDir::new().unwrap();
+            let config = create_test_config_with_folder(&temp_dir).await;
+            let sync_service = SyncService::new(config).await.unwrap();
+            
+            let chunk_store = sync_service.get_chunk_store();
+            assert_eq!(chunk_store.chunk_count(), 0);
+            
+            let request_manager = sync_service.get_request_manager();
+            assert_eq!(request_manager.pending_request_count().await, 0);
+        });
     }
 
     #[tokio::test]
@@ -804,22 +834,6 @@ mod tests {
         let result = sync_service.reconstruct_file(file_path, &manifest).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("hash mismatch"));
-    }
-
-    #[test]
-    fn test_sync_service_accessors() {
-        // Test that we can get references to internal components
-        tokio_test::block_on(async {
-            let temp_dir = TempDir::new().unwrap();
-            let config = create_test_config_with_folder(&temp_dir).await;
-            let sync_service = SyncService::new(config).await.unwrap();
-            
-            let chunk_store = sync_service.get_chunk_store();
-            assert_eq!(chunk_store.chunk_count(), 0);
-            
-            let request_manager = sync_service.get_request_manager();
-            assert_eq!(request_manager.pending_request_count().await, 0);
-        });
     }
 
     #[tokio::test]

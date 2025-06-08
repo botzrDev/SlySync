@@ -173,7 +173,6 @@ pub async fn add_folder(path: PathBuf, name: Option<String>) -> Result<()> {
 /// operations fail.
 pub async fn generate_invitation() -> Result<()> {
     let config = crate::config::Config::load().await?;
-    
     if config.sync_folders().is_empty() {
         anyhow::bail!("No folders to sync. Add a folder first with 'slysync add <path>'");
     }
