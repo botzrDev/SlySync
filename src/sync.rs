@@ -200,21 +200,34 @@ impl SyncService {
         match event.kind {
             notify::EventKind::Create(_) => {
                 for path in &event.paths {
-                    self.handle_file_created(path).await?;
+                    if path.is_file() {
+                        info!("File created: {}", path.display());
+                        if let Err(e) = self.handle_file_created(path).await {
+                            error!("Error handling file creation {}: {}", path.display(), e);
+                        }
+                    }
                 }
             }
             notify::EventKind::Modify(_) => {
                 for path in &event.paths {
-                    self.handle_file_modified(path).await?;
+                    if path.is_file() {
+                        info!("File modified: {}", path.display());
+                        if let Err(e) = self.handle_file_modified(path).await {
+                            error!("Error handling file modification {}: {}", path.display(), e);
+                        }
+                    }
                 }
             }
             notify::EventKind::Remove(_) => {
                 for path in &event.paths {
-                    self.handle_file_removed(path).await?;
+                    info!("File removed: {}", path.display());
+                    if let Err(e) = self.handle_file_removed(path).await {
+                        error!("Error handling file removal {}: {}", path.display(), e);
+                    }
                 }
             }
             _ => {
-                // Ignore other event types for now
+                debug!("Ignoring file event: {:?}", event.kind);
             }
         }
         

@@ -47,9 +47,8 @@ use std::sync::Arc;
 use tokio::net::UdpSocket;
 use tokio::sync::{mpsc, RwLock};
 use tokio::time::{interval, Duration, Instant};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 use uuid::Uuid;
-use rustls::client::ServerCertVerifier;
 
 /// Protocol messages exchanged between peers
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -399,7 +398,7 @@ impl P2PService {
     async fn handle_message_static(
         peer_id: String,
         message: P2PMessage,
-        peers: &Arc<RwLock<HashMap<String, PeerInfo>>>,
+        _peers: &Arc<RwLock<HashMap<String, PeerInfo>>>,
         connections: &Arc<RwLock<HashMap<String, PeerConnection>>>,
         chunk_store: Option<Arc<crate::storage::ChunkStore>>,
         request_manager: Option<Arc<crate::requests::RequestManager>>,
@@ -417,38 +416,58 @@ impl P2PService {
                                 chunk_id,
                                 data: chunk,
                             };
-                            let _ = connection.send_message(&response).await;
+                            if let Err(e) = connection.send_message(&response).await {
+                                warn!("Failed to send chunk response to {}: {}", peer_id, e);
+                            }
                         }
+                    } else {
+                        warn!("Requested chunk not found: {:?}", hash);
                     }
+                } else {
+                    warn!("No chunk store available to handle request");
                 }
             }
             P2PMessage::ChunkResponse { hash, chunk_id, data } => {
                 info!("Received chunk response from {}: {:?}:{} ({} bytes)", peer_id, hash, chunk_id, data.len());
+                
+                // Verify chunk integrity
+                let computed_hash = crate::crypto::hash_file_chunk(&data);
+                if computed_hash != hash {
+                    warn!("Chunk corruption detected from peer {}: expected {:?}, got {:?}", peer_id, hash, computed_hash);
+                    return;
+                }
+                
                 if let Some(request_manager) = &request_manager {
-                    // Construct a P2PResponse and pass to handle_response
                     let response = crate::requests::P2PResponse {
-                        request_id: format!("{}_{}", hex::encode(hash), chunk_id), // TODO: Use real request_id mapping
+                        request_id: format!("{}_{}", hex::encode(hash), chunk_id),
                         response_type: crate::requests::P2PResponseType::ChunkResponse { hash, chunk_id, data },
                     };
-                    let _ = request_manager.handle_response(response);
+                    if let Err(e) = request_manager.handle_response(response) {
+                        warn!("Failed to handle chunk response: {}", e);
+                    }
                 }
             }
             P2PMessage::FileUpdate { path, hash, size, chunks } => {
                 info!("Received file update from {}: {} ({} bytes, {} chunks)", peer_id, path, size, chunks.len());
                 if let Some(sync_service) = &sync_service {
-                    let _ = sync_service.handle_peer_file_update(&path, hash, size, chunks, &peer_id).await;
+                    if let Err(e) = sync_service.handle_peer_file_update(&path, hash, size, chunks, &peer_id).await {
+                        warn!("Failed to handle file update from {}: {}", peer_id, e);
+                    }
                 }
             }
-            P2PMessage::AuthChallenge { .. } => {
+            P2PMessage::AuthChallenge { challenge: _ } => {
                 info!("Received auth challenge from {}", peer_id);
-                // TODO: Respond to challenge using our private key
+                // TODO: Implement proper auth challenge response
+                warn!("Auth challenge handling not yet implemented");
             }
-            P2PMessage::AuthResponse { .. } => {
+            P2PMessage::AuthResponse { response: _ } => {
                 info!("Received auth response from {}", peer_id);
-                // TODO: Verify response and complete handshake
+                // TODO: Verify auth response and complete handshake
+                warn!("Auth response handling not yet implemented");
             }
             P2PMessage::Announce { .. } => {
                 // Handled by discovery system
+                debug!("Received announce message from {}", peer_id);
             }
         }
     }

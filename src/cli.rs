@@ -16,11 +16,8 @@
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use std::error::Error;
 use std::path::PathBuf;
-use tokio::time::error::Elapsed;
 use tracing::{info, warn, error};
-use yansi::Paint;
 
 /// Command-line interface structure for SlySync.
 /// 
@@ -177,9 +174,18 @@ pub async fn generate_invitation() -> Result<()> {
         anyhow::bail!("No folders to sync. Add a folder first with 'slysync add <path>'");
     }
     
+    // Load identity to sign the invitation
+    let identity = crate::crypto::Identity::load_or_generate(&config.identity_path())?;
+    
+    // Use configured listen address
+    let listen_addr = std::net::SocketAddr::new(
+        std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST), 
+        config.listen_port
+    );
+    
     // Get the last added folder
     let folder = config.sync_folders().last().unwrap();
-    let invitation = crate::crypto::generate_invitation_code(&folder.id)?;
+    let invitation = crate::crypto::generate_invitation_code(&folder.id, &identity, listen_addr)?;
     
     println!("📨 Invitation code for folder '{}' ({})", 
              folder.name.as_deref().unwrap_or("unnamed"), 
@@ -208,8 +214,8 @@ pub async fn generate_invitation() -> Result<()> {
 pub async fn join_sync(code: String, path: PathBuf) -> Result<()> {
     tracing::info!("Joining sync with code: {} at path: {}", code, path.display());
     
-    // Validate invitation code
-    let folder_info = crate::crypto::validate_invitation_code(&code)?;
+    // Validate invitation code (without peer key verification for now)
+    let folder_info = crate::crypto::validate_invitation_code(&code, None)?;
     
     // Create local directory if it doesn't exist
     if !path.exists() {

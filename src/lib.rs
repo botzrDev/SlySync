@@ -20,25 +20,9 @@
 //! - [`config`] - Configuration management and storage
 //! - [`crypto`] - Cryptographic operations and identity management
 //! - [`p2p`] - Peer-to-peer networking and communication
-//! - [`requests`] - Request/response management for P2P operations
 //! - [`storage`] - Chunk-based file storage system
 //! - [`sync`] - File synchronization engine
-//! 
-//! ## Quick Start
-//! 
-//! ```bash
-//! # Initialize SyncCore
-//! synccore init
-//! 
-//! # Add a folder to sync
-//! synccore add /path/to/folder --name "My Documents"
-//! 
-//! # Generate invitation code
-//! synccore link
-//! 
-//! # Start daemon
-//! synccore daemon
-//! ```
+//! - [`requests`] - Request/response management for P2P operations
 
 pub mod cli;
 pub mod config;

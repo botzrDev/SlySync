@@ -9,58 +9,58 @@ The SlySync CLI has successfully evolved from individual components to a cohesiv
 - [x] **Fix relative path handling in sync folders** (`sync.rs`)
   - Current: `get_relative_path()` method needs proper path resolution
   - Impact: File operations may fail with incorrect paths
-  - Files: `src/sync.rs:341` - `get_relative_path()` method
+  - Files: `src/sync.rs:472` - `get_relative_path()` method
 
 ### P2P Message Handling 
 - [x] **Complete P2P message processing** (`p2p.rs`)
   - Current: Placeholder implementations for all message types
   - Need: Actual chunk request/response handling
-  - Files: `src/p2p.rs:446-477` - message handling match arms
+  - Files: `src/p2p.rs:407-445` - message handling match arms
   ```rust
-  // TODO: Handle chunk request (line 446)
-  // TODO: Handle chunk response (line 450) 
-  // TODO: Handle file update (line 454)
-  // TODO: Handle auth challenge (line 458)
-  // TODO: Handle auth response (line 462)
+  // TODO: Handle chunk request (line 407)
+  // TODO: Handle chunk response (line 428) 
+  // TODO: Handle file update (line 436)
+  // TODO: Handle auth challenge (line 445)
+  // TODO: Handle auth response (line 445)
   ```
 
 ### Peer-to-Peer Chunk Transfer
 - [x] **Implement actual chunk request/response system**
   - Current: RequestManager exists but not connected to P2P messages
   - Need: Connect `RequestManager` with `P2PService::handle_message()`
-  - Files: `src/p2p.rs:254`, `src/requests.rs`
+  - Files: `src/p2p.rs:286`, `src/requests.rs`
 
 - [x] **Complete chunk verification and response flow**
   - Current: `send_request()` has placeholder response waiting
   - Need: Actual request/response matching and timeout handling
-  - Files: `src/p2p.rs:477` - "Wait for and verify response"
+  - Files: `src/p2p.rs:428` - "Wait for and verify response"
 
 ### File Synchronization Logic
 - [ ] **Complete peer file update propagation**
   - Current: File deletion not propagated to peers
   - Need: Send deletion notifications to all connected peers
-  - Files: `src/sync.rs:206` - "Propagate deletion to peers"
+  - Files: `src/sync.rs:243` - "Propagate deletion to peers"
 
 ## 🛠️ Medium Priority - CLI Features
 
 ### Status Command Implementation
-- [ ] **Implement actual status checking** (`cli.rs:164`)
+- [ ] **Implement actual status checking** (`cli.rs:238-243`)
   - Current: Shows "Up to date" placeholder
   - Need: Check sync status with peers, pending files, conflicts
 
-- [ ] **Implement peer counting** (`cli.rs:165`)
+- [ ] **Implement peer counting** (`cli.rs:239`)
   - Current: Shows "0 connected" placeholder
   - Need: Query P2PService for active peer connections
 
-- [ ] **Implement file counting and size calculation** (`cli.rs:168-169`)
+- [ ] **Implement file counting and size calculation** (`cli.rs:242-243`)
   - Current: Shows "0 files, 0 bytes" placeholder
   - Need: Scan sync folders and calculate totals
 
 ### Invitation System
-- [ ] **Complete invitation code generation** (`crypto.rs:109-112`)
+- [ ] **Complete invitation code generation** (`crypto.rs:122-128`)
   - Current: Placeholder values for peer_id, address, signature
   - Need: Generate actual cryptographic invitation codes
-  - Impact: `slysync link` and `slysync join` commands won't work
+  - Impact: `slysync link` and `slysync join` commands won't work properly
 
 - [ ] **Implement invitation signature verification** (`crypto.rs:135`)
   - Current: "TODO: Verify signature" comment

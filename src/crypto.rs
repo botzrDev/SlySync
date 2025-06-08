@@ -11,10 +11,12 @@
 //! - Base64 encoding for invitation codes
 
 use anyhow::Result;
+use base64::Engine;
 use ed25519_dalek::{SigningKey, VerifyingKey, Signature, Signer, Verifier};
 use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
+use std::net::SocketAddr;
 
 /// Cryptographic identity for a SyncCore node.
 /// 
@@ -120,13 +122,20 @@ impl Identity {
     }
 }
 
-pub fn generate_invitation_code(folder_id: &str) -> Result<String> {
+pub fn generate_invitation_code(folder_id: &str, identity: &Identity, listen_addr: SocketAddr) -> Result<String> {
+    // Create challenge data to sign
+    let expires_at = chrono::Utc::now() + chrono::Duration::hours(24);
+    let challenge_data = format!("{}:{}:{}", folder_id, identity.peer_id(), expires_at.timestamp());
+    
+    // Sign the challenge
+    let signature = identity.sign(challenge_data.as_bytes());
+    
     let invitation = InvitationCode {
         folder_id: folder_id.to_string(),
-        peer_id: "temp_peer_id".to_string(), // TODO: Get actual peer ID
-        address: "0.0.0.0:0".to_string(), // TODO: Get actual address
-        expires_at: chrono::Utc::now() + chrono::Duration::hours(24),
-        signature: "temp_signature".to_string(), // TODO: Generate actual signature
+        peer_id: identity.peer_id(),
+        address: listen_addr.to_string(),
+        expires_at,
+        signature: base64::prelude::BASE64_STANDARD.encode(signature.to_bytes()),
     };
     
     use base64::prelude::*;
@@ -141,7 +150,7 @@ pub fn parse_invitation_code(code: &str) -> Result<InvitationCode> {
     Ok(invitation)
 }
 
-pub fn validate_invitation_code(code: &str) -> Result<crate::config::RemoteFolderInfo> {
+pub fn validate_invitation_code(code: &str, expected_peer_key: Option<&VerifyingKey>) -> Result<crate::config::RemoteFolderInfo> {
     let invitation = parse_invitation_code(code)?;
     
     // Check expiration
@@ -149,7 +158,24 @@ pub fn validate_invitation_code(code: &str) -> Result<crate::config::RemoteFolde
         anyhow::bail!("Invitation code has expired");
     }
     
-    // TODO: Verify signature
+    // Verify signature if we have the peer's public key
+    if let Some(peer_key) = expected_peer_key {
+        let challenge_data = format!("{}:{}:{}", invitation.folder_id, invitation.peer_id, invitation.expires_at.timestamp());
+        let signature_bytes = base64::prelude::BASE64_STANDARD.decode(&invitation.signature)
+            .map_err(|_| anyhow::anyhow!("Invalid signature encoding"))?;
+        
+        if signature_bytes.len() != 64 {
+            anyhow::bail!("Invalid signature length");
+        }
+        
+        let mut sig_array = [0u8; 64];
+        sig_array.copy_from_slice(&signature_bytes);
+        let signature = Signature::from_bytes(&sig_array);
+        
+        if peer_key.verify(challenge_data.as_bytes(), &signature).is_err() {
+            anyhow::bail!("Invalid invitation signature");
+        }
+    }
     
     Ok(crate::config::RemoteFolderInfo {
         folder_id: invitation.folder_id,

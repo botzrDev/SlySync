@@ -77,27 +77,40 @@ impl ChunkStore {
     /// Store a chunk with the given hash
     pub async fn store_chunk(&self, hash: [u8; 32], data: &[u8]) -> Result<()> {
         let hash_key = hex::encode(hash);
-        let mut needs_save = false;
-        {
-            let mut index = self.chunk_index.write();
-            if let Some(metadata) = index.get_mut(&hash_key) {
-                metadata.ref_count += 1;
-                needs_save = true;
-                // lock will be dropped at end of this block
-                return Ok(());
-            }
+        
+        // First check if chunk already exists (read lock)
+        let chunk_exists = {
+            let index = self.chunk_index.read();
+            index.contains_key(&hash_key)
+        };
+        
+        if chunk_exists {
+            // Chunk exists, increment ref count
+            {
+                let mut index = self.chunk_index.write();
+                if let Some(metadata) = index.get_mut(&hash_key) {
+                    metadata.ref_count += 1;
+                    metadata.last_accessed = chrono::Utc::now();
+                }
+            } // Lock is dropped here automatically
+            self.save_index().await?;
+            return Ok(());
         }
-        // If not, prepare to store new chunk
+        
+        // Chunk doesn't exist, need to store it
         let chunk_path = self.get_chunk_path(&hash);
-        let parent = chunk_path.parent().map(|p| p.to_path_buf());
-        // Create parent directory if needed (async, no lock held)
-        if let Some(parent) = parent {
+        
+        // Create parent directory if needed
+        if let Some(parent) = chunk_path.parent() {
             if !parent.exists() {
-                tokio::fs::create_dir_all(&parent).await?;
+                tokio::fs::create_dir_all(parent).await?;
             }
         }
-        // Write chunk to disk (async, no lock held)
+        
+        // Write chunk to disk
         tokio::fs::write(&chunk_path, data).await?;
+        
+        // Add to index
         let now = chrono::Utc::now();
         {
             let mut index = self.chunk_index.write();
@@ -109,11 +122,10 @@ impl ChunkStore {
                 created_at: now,
                 last_accessed: now,
             });
-            needs_save = true;
         }
-        if needs_save {
-            self.save_index().await?;
-        }
+        
+        self.save_index().await?;
+        debug!("Stored new chunk {} ({} bytes)", hex::encode(hash), data.len());
         Ok(())
     }
 
