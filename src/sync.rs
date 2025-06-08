@@ -469,13 +469,16 @@ impl SyncService {
     }
     
     fn get_relative_path(&self, file_path: &Path) -> Result<String> {
-        // Find which sync folder this file belongs to
+        // Normalize and canonicalize the file path
+        let file_path = file_path.canonicalize().map_err(|e| anyhow::anyhow!("Failed to canonicalize path {}: {}", file_path.display(), e))?;
         for folder in self.config.sync_folders() {
-            if let Ok(relative) = file_path.strip_prefix(&folder.path) {
-                return Ok(relative.to_string_lossy().to_string());
+            let folder_path = folder.path.canonicalize().map_err(|e| anyhow::anyhow!("Failed to canonicalize sync folder {}: {}", folder.path.display(), e))?;
+            if let Ok(relative) = file_path.strip_prefix(&folder_path) {
+                // Always use forward slashes for consistency
+                let rel_str = relative.iter().map(|c| c.to_string_lossy()).collect::<Vec<_>>().join("/");
+                return Ok(rel_str);
             }
         }
-        
         anyhow::bail!("File not in any sync folder: {}", file_path.display())
     }
     

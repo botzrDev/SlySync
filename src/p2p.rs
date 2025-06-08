@@ -40,7 +40,6 @@
 use anyhow::{anyhow, Result};
 use quinn::{ClientConfig, Connection, Endpoint, ServerConfig};
 use rustls::{Certificate, PrivateKey};
-use rustls::client::ServerCertVerifier;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
@@ -151,6 +150,9 @@ pub struct P2PService {
     connections: Arc<RwLock<HashMap<String, PeerConnection>>>,
     message_tx: mpsc::UnboundedSender<(String, P2PMessage)>,
     message_rx: Arc<RwLock<Option<mpsc::UnboundedReceiver<(String, P2PMessage)>>>>,
+    pub chunk_store: Option<Arc<crate::storage::ChunkStore>>,
+    pub request_manager: Option<Arc<crate::requests::RequestManager>>,
+    pub sync_service: Option<Arc<crate::sync::SyncService>>,
 }
 
 impl P2PService {
@@ -183,6 +185,9 @@ impl P2PService {
             connections: Arc::new(RwLock::new(HashMap::new())),
             message_tx,
             message_rx: Arc::new(RwLock::new(Some(message_rx))),
+            chunk_store: None,
+            request_manager: None,
+            sync_service: None,
         };
         
         // Start background tasks
@@ -369,16 +374,12 @@ impl P2PService {
     async fn start_message_handler(&self) -> Result<()> {
         let mut message_rx = self.message_rx.write().await.take()
             .ok_or_else(|| anyhow!("Message handler already started"))?;
-        
-        let peers = self.peers.clone();
-        let connections = self.connections.clone();
-        
+        let this = self.clone();
         tokio::spawn(async move {
             while let Some((peer_id, message)) = message_rx.recv().await {
-                Self::handle_message(peer_id, message, &peers, &connections).await;
+                this.handle_message(peer_id, message, &this.peers, &this.connections).await;
             }
         });
-        
         Ok(())
     }
     
@@ -475,6 +476,7 @@ impl P2PService {
     }
     
     async fn handle_message(
+        &self,
         peer_id: String,
         message: P2PMessage,
         _peers: &Arc<RwLock<HashMap<String, PeerInfo>>>,
@@ -483,23 +485,44 @@ impl P2PService {
         match message {
             P2PMessage::ChunkRequest { hash, chunk_id } => {
                 info!("Received chunk request from {}: {:?}:{}", peer_id, hash, chunk_id);
-                // TODO: Handle chunk request
+                if let Some(chunk_store) = &self.chunk_store {
+                    if let Ok(chunk) = chunk_store.get_chunk(&hash).await {
+                        let connections = self.connections.read().await;
+                        if let Some(connection) = connections.get(&peer_id) {
+                            let response = P2PMessage::ChunkResponse {
+                                hash,
+                                chunk_id,
+                                data: chunk,
+                            };
+                            let _ = connection.send_message(&response).await;
+                        }
+                    }
+                }
             }
             P2PMessage::ChunkResponse { hash, chunk_id, data } => {
                 info!("Received chunk response from {}: {:?}:{} ({} bytes)", peer_id, hash, chunk_id, data.len());
-                // TODO: Handle chunk response
+                if let Some(request_manager) = &self.request_manager {
+                    // Construct a P2PResponse and pass to handle_response
+                    let response = crate::requests::P2PResponse {
+                        request_id: format!("{}_{}", hex::encode(hash), chunk_id), // TODO: Use real request_id mapping
+                        response_type: crate::requests::P2PResponseType::ChunkResponse { hash, chunk_id, data },
+                    };
+                    let _ = request_manager.handle_response(response);
+                }
             }
-            P2PMessage::FileUpdate { path, hash: _, size, chunks } => {
+            P2PMessage::FileUpdate { path, hash, size, chunks } => {
                 info!("Received file update from {}: {} ({} bytes, {} chunks)", peer_id, path, size, chunks.len());
-                // TODO: Handle file update
+                if let Some(sync_service) = &self.sync_service {
+                    let _ = sync_service.handle_peer_file_update(&path, hash, size, chunks, &peer_id).await;
+                }
             }
-            P2PMessage::AuthChallenge { challenge: _ } => {
+            P2PMessage::AuthChallenge { .. } => {
                 info!("Received auth challenge from {}", peer_id);
-                // TODO: Handle auth challenge
+                // TODO: Respond to challenge using our private key
             }
-            P2PMessage::AuthResponse { response: _ } => {
+            P2PMessage::AuthResponse { .. } => {
                 info!("Received auth response from {}", peer_id);
-                // TODO: Handle auth response
+                // TODO: Verify response and complete handshake
             }
             P2PMessage::Announce { .. } => {
                 // Handled by discovery system
@@ -517,6 +540,16 @@ impl P2PService {
         // TODO: Wait for and verify response
         
         Ok(())
+    }
+    
+    pub fn set_chunk_store(&mut self, chunk_store: Arc<crate::storage::ChunkStore>) {
+        self.chunk_store = Some(chunk_store);
+    }
+    pub fn set_request_manager(&mut self, request_manager: Arc<crate::requests::RequestManager>) {
+        self.request_manager = Some(request_manager);
+    }
+    pub fn set_sync_service(&mut self, sync_service: Arc<crate::sync::SyncService>) {
+        self.sync_service = Some(sync_service);
     }
 }
 
@@ -815,7 +848,7 @@ mod tests {
     #[tokio::test]
     async fn test_peer_connection_creation() {
         // Test peer connection structure
-        let address = "127.0.0.1:8080".parse().unwrap();
+        let address: std::net::SocketAddr = "127.0.0.1:8080".parse().unwrap();
         
         // We can't easily create a real Connection for testing without a full QUIC setup
         // So we'll just test the types and structure
