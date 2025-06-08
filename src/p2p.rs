@@ -588,8 +588,11 @@ mod tests {
 
     async fn create_test_config() -> crate::config::Config {
         let temp_dir = TempDir::new().unwrap();
-        let config_path = temp_dir.path().join("test_config.toml");
-        crate::config::Config::new(&config_path).await.unwrap()
+        // Use Config::init().await instead of Config::new
+        std::env::set_var("SLYSYNC_CONFIG_DIR", temp_dir.path());
+        let config = crate::config::Config::init().await.unwrap();
+        std::env::remove_var("SLYSYNC_CONFIG_DIR");
+        config
     }
 
     #[tokio::test]
