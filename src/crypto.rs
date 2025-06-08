@@ -1,9 +1,26 @@
+//! # Cryptographic Operations
+//! 
+//! This module provides cryptographic functionality for SyncCore, including:
+//! - Ed25519 digital signatures for node identity and authentication
+//! - Invitation code generation and validation
+//! - Peer authentication and verification
+//! 
+//! All cryptographic operations use industry-standard algorithms:
+//! - Ed25519 for digital signatures (RFC 8032)
+//! - OS-provided random number generation
+//! - Base64 encoding for invitation codes
+
 use anyhow::Result;
 use ed25519_dalek::{SigningKey, VerifyingKey, Signature, Signer, Verifier};
 use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
+/// Cryptographic identity for a SyncCore node.
+/// 
+/// Each node has a unique Ed25519 key pair that serves as its identity.
+/// The public key acts as the node ID, while the private key is used
+/// for signing messages and proving authenticity.
 #[derive(Clone)]
 pub struct Identity {
     signing_key: SigningKey,
@@ -147,4 +164,183 @@ pub fn hash_file_chunk(data: &[u8]) -> [u8; 32] {
 
 pub fn hash_to_hex(hash: &[u8; 32]) -> String {
     hex::encode(hash)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_identity_generation() {
+        let identity = Identity::generate().unwrap();
+        let public_key_hex = identity.public_key_hex();
+        
+        // Ed25519 public keys are 32 bytes = 64 hex chars
+        assert_eq!(public_key_hex.len(), 64);
+    }
+
+    #[test]
+    fn test_identity_save_and_load() {
+        let temp_dir = TempDir::new().unwrap();
+        let key_path = temp_dir.path().join("test_identity.key");
+        
+        // Generate and save identity
+        let original_identity = Identity::generate().unwrap();
+        original_identity.save(&key_path).unwrap();
+        
+        // Load identity
+        let loaded_identity = Identity::load(&key_path).unwrap();
+        
+        // Should have same public key
+        assert_eq!(
+            original_identity.public_key_hex(),
+            loaded_identity.public_key_hex()
+        );
+    }
+
+    #[test]
+    fn test_identity_load_or_generate_existing() {
+        let temp_dir = TempDir::new().unwrap();
+        let key_path = temp_dir.path().join("existing_identity.key");
+        
+        // Create an identity file
+        let original_identity = Identity::generate().unwrap();
+        original_identity.save(&key_path).unwrap();
+        
+        // Load or generate should load the existing one
+        let loaded_identity = Identity::load_or_generate(&key_path).unwrap();
+        
+        assert_eq!(
+            original_identity.public_key_hex(),
+            loaded_identity.public_key_hex()
+        );
+    }
+
+    #[test]
+    fn test_identity_load_or_generate_new() {
+        let temp_dir = TempDir::new().unwrap();
+        let key_path = temp_dir.path().join("new_identity.key");
+        
+        // File doesn't exist, should generate new
+        let identity = Identity::load_or_generate(&key_path).unwrap();
+        
+        // Should have created the file
+        assert!(key_path.exists());
+        
+        // Should be able to load it again
+        let loaded_identity = Identity::load(&key_path).unwrap();
+        assert_eq!(identity.public_key_hex(), loaded_identity.public_key_hex());
+    }
+
+    #[test]
+    fn test_signing_and_verification() {
+        let identity = Identity::generate().unwrap();
+        let message = b"test message for signing";
+        
+        let signature = identity.sign(message);
+        let is_valid = identity.verify(message, &signature);
+        
+        assert!(is_valid);
+        
+        // Test with different message
+        let wrong_message = b"different message";
+        let is_valid_wrong = identity.verify(wrong_message, &signature);
+        assert!(!is_valid_wrong);
+    }
+
+    #[test]
+    fn test_invitation_code_generation() {
+        let folder_id = "test-folder-123";
+        let invitation = generate_invitation_code(folder_id).unwrap();
+        
+        // Should be base64 encoded
+        assert!(!invitation.is_empty());
+        
+        // Should be decodable
+        let parsed = parse_invitation_code(&invitation).unwrap();
+        assert_eq!(parsed.folder_id, folder_id);
+    }
+
+    #[test]
+    fn test_invitation_code_validation() {
+        let folder_id = "test-folder-123";
+        let invitation = generate_invitation_code(folder_id).unwrap();
+        
+        let folder_info = validate_invitation_code(&invitation).unwrap();
+        
+        assert_eq!(folder_info.folder_id, folder_id);
+        assert_eq!(folder_info.peer_id, "temp_peer_id");
+        assert_eq!(folder_info.name, None);
+    }
+
+    #[test]
+    fn test_invitation_code_expired() {
+        // Create an expired invitation
+        let invitation = InvitationCode {
+            folder_id: "test-folder".to_string(),
+            peer_id: "test-peer".to_string(),
+            address: "127.0.0.1:41337".to_string(),
+            expires_at: chrono::Utc::now() - chrono::Duration::hours(1), // Expired
+            signature: "test-signature".to_string(),
+        };
+        
+        use base64::prelude::*;
+        let encoded = BASE64_STANDARD.encode(serde_json::to_vec(&invitation).unwrap());
+        
+        // Should fail validation due to expiration
+        assert!(validate_invitation_code(&encoded).is_err());
+    }
+
+    #[test]
+    fn test_hash_file_chunk() {
+        let data = b"test data for hashing";
+        let hash = hash_file_chunk(data);
+        
+        // BLAKE3 produces 32-byte hashes
+        assert_eq!(hash.len(), 32);
+        
+        // Same data should produce same hash
+        let hash2 = hash_file_chunk(data);
+        assert_eq!(hash, hash2);
+        
+        // Different data should produce different hash
+        let different_data = b"different test data";
+        let different_hash = hash_file_chunk(different_data);
+        assert_ne!(hash, different_hash);
+    }
+
+    #[test]
+    fn test_hash_to_hex() {
+        let hash = [0u8; 32]; // All zeros
+        let hex = hash_to_hex(&hash);
+        assert_eq!(hex, "0".repeat(64));
+        
+        let hash = [255u8; 32]; // All ones
+        let hex = hash_to_hex(&hash);
+        assert_eq!(hex, "f".repeat(64));
+    }
+
+    #[test]
+    fn test_identity_peer_id() {
+        let identity = Identity::generate().unwrap();
+        let peer_id = identity.peer_id();
+        let public_key_hex = identity.public_key_hex();
+        
+        assert_eq!(peer_id, public_key_hex);
+    }
+
+    #[test]
+    fn test_identity_key_bytes() {
+        let identity = Identity::generate().unwrap();
+        
+        let public_bytes = identity.public_key_bytes();
+        let private_bytes = identity.private_key_bytes();
+        
+        assert_eq!(public_bytes.len(), 32);
+        assert_eq!(private_bytes.len(), 32);
+        
+        // Public and private keys should be different
+        assert_ne!(public_bytes, private_bytes);
+    }
 }

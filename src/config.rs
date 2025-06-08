@@ -1,8 +1,25 @@
+//! # Configuration Management
+//! 
+//! This module handles SyncCore's configuration system, including:
+//! - TOML-based configuration files
+//! - Sync folder management
+//! - Node settings and preferences
+//! - Persistent storage of application state
+//! 
+//! The configuration is stored in a platform-appropriate directory
+//! (e.g., `~/.config/synccore/` on Linux) and includes both node-level
+//! settings and per-folder synchronization configurations.
+
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
+/// Main configuration structure for SyncCore.
+/// 
+/// This structure contains all the settings and state information
+/// needed to run a SyncCore node, including network settings,
+/// bandwidth limits, and the list of synchronized folders.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Config {
     pub node_id: String,
@@ -16,6 +33,10 @@ pub struct Config {
     config_file_path: PathBuf,
 }
 
+/// Represents a folder that is being synchronized.
+/// 
+/// Each sync folder has a unique ID, a local filesystem path,
+/// an optional human-readable name, and synchronization state.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SyncFolder {
     pub id: String,
@@ -24,6 +45,10 @@ pub struct SyncFolder {
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
+/// Information about a remote folder shared by another peer.
+/// 
+/// This structure contains the metadata needed to join a remote
+/// synchronization folder via an invitation code.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RemoteFolderInfo {
     pub folder_id: String,
@@ -124,5 +149,120 @@ impl Config {
             .join("synccore");
         
         Ok(config_dir)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+    use std::env;
+
+    async fn create_test_config() -> (Config, TempDir) {
+        let temp_dir = TempDir::new().unwrap();
+        let config_file = temp_dir.path().join("config.toml");
+        
+        let config = Config {
+            node_id: "test_node".to_string(),
+            listen_port: 41337,
+            bandwidth_limit_up: None,
+            bandwidth_limit_down: None,
+            discovery_enabled: true,
+            sync_folders: Vec::new(),
+            config_file_path: config_file,
+        };
+        
+        (config, temp_dir)
+    }
+
+    #[tokio::test]
+    async fn test_config_save_and_load() {
+        let (config, _temp_dir) = create_test_config().await;
+        
+        // Save config
+        config.save().await.unwrap();
+        
+        // Load config
+        let content = tokio::fs::read_to_string(&config.config_file_path).await.unwrap();
+        let loaded_config: Config = toml::from_str(&content).unwrap();
+        
+        assert_eq!(loaded_config.node_id, "test_node");
+        assert_eq!(loaded_config.listen_port, 41337);
+        assert_eq!(loaded_config.discovery_enabled, true);
+    }
+
+    #[tokio::test]
+    async fn test_add_sync_folder() {
+        let (mut config, temp_dir) = create_test_config().await;
+        let test_path = temp_dir.path().join("test_folder");
+        std::fs::create_dir(&test_path).unwrap();
+        
+        let folder_id = config.add_sync_folder(test_path.clone(), Some("Test Folder".to_string())).unwrap();
+        
+        assert_eq!(config.sync_folders.len(), 1);
+        assert_eq!(config.sync_folders[0].id, folder_id);
+        assert_eq!(config.sync_folders[0].path, test_path);
+        assert_eq!(config.sync_folders[0].name, Some("Test Folder".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_add_remote_sync_folder() {
+        let (mut config, temp_dir) = create_test_config().await;
+        let test_path = temp_dir.path().join("remote_folder");
+        std::fs::create_dir(&test_path).unwrap();
+        
+        let remote_info = RemoteFolderInfo {
+            folder_id: "remote_folder_id".to_string(),
+            peer_id: "remote_peer_id".to_string(),
+            name: Some("Remote Folder".to_string()),
+        };
+        
+        config.add_remote_sync_folder(test_path.clone(), remote_info).unwrap();
+        
+        assert_eq!(config.sync_folders.len(), 1);
+        assert_eq!(config.sync_folders[0].id, "remote_folder_id");
+        assert_eq!(config.sync_folders[0].path, test_path);
+        assert_eq!(config.sync_folders[0].name, Some("Remote Folder".to_string()));
+    }
+
+    #[test]
+    fn test_sync_folders_getter() {
+        let config = Config {
+            node_id: "test".to_string(),
+            listen_port: 41337,
+            bandwidth_limit_up: None,
+            bandwidth_limit_down: None,
+            discovery_enabled: true,
+            sync_folders: vec![
+                SyncFolder {
+                    id: "folder1".to_string(),
+                    path: PathBuf::from("/test1"),
+                    name: Some("Test 1".to_string()),
+                    created_at: chrono::Utc::now(),
+                }
+            ],
+            config_file_path: PathBuf::from("/test/config.toml"),
+        };
+        
+        let folders = config.sync_folders();
+        assert_eq!(folders.len(), 1);
+        assert_eq!(folders[0].id, "folder1");
+    }
+
+    #[test]
+    fn test_config_paths() {
+        let config = Config {
+            node_id: "test".to_string(),
+            listen_port: 41337,
+            bandwidth_limit_up: None,
+            bandwidth_limit_down: None,
+            discovery_enabled: true,
+            sync_folders: Vec::new(),
+            config_file_path: PathBuf::from("/test/config.toml"),
+        };
+        
+        assert_eq!(config.config_path(), Path::new("/test/config.toml"));
+        assert!(config.identity_path().to_string_lossy().ends_with("identity.key"));
+        assert!(config.data_dir().unwrap().to_string_lossy().ends_with("data"));
     }
 }

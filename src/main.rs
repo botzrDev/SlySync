@@ -1,3 +1,9 @@
+//! # SyncCore CLI Application
+//! 
+//! Main entry point for the SyncCore peer-to-peer file synchronization utility.
+//! This application provides a command-line interface for managing file synchronization
+//! across multiple devices without requiring central servers.
+
 use anyhow::Result;
 use clap::Parser;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -12,6 +18,10 @@ mod sync;
 
 use cli::{Cli, Commands};
 
+/// Main entry point for the SyncCore application.
+/// 
+/// This function sets up logging, parses command line arguments, and dispatches
+/// to the appropriate command handler based on user input.
 #[tokio::main]
 async fn main() -> Result<()> {
     // Initialize logging

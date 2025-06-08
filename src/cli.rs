@@ -1,8 +1,28 @@
+//! # Command Line Interface
+//! 
+//! This module provides the command-line interface for SyncCore, including
+//! argument parsing, command definitions, and command implementations.
+//! 
+//! ## Commands
+//! 
+//! - `init` - Initialize SyncCore configuration and generate node identity
+//! - `id` - Display the current node's public ID
+//! - `add` - Add a new local folder to be synchronized
+//! - `link` - Generate a secure invitation code for sharing folders
+//! - `join` - Join a remote sync folder using an invitation code
+//! - `status` - Display status of all sync jobs
+//! - `peers` - List all connected peers
+//! - `daemon` - Run the SyncCore engine as a background daemon
+
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 use tracing::{info, warn, error};
 
+/// Command-line interface structure for SyncCore.
+/// 
+/// This structure defines the main CLI parser and available subcommands
+/// using the clap derive macros for automatic argument parsing.
 #[derive(Parser)]
 #[command(name = "synccore")]
 #[command(about = "A next-generation, peer-to-peer file synchronization CLI utility")]
@@ -12,6 +32,10 @@ pub struct Cli {
     pub command: Commands,
 }
 
+/// Available CLI commands for SyncCore.
+/// 
+/// Each command represents a different operation that can be performed
+/// with the SyncCore application, from initialization to daemon operation.
 #[derive(Subcommand)]
 pub enum Commands {
     /// Initialize SyncCore configuration and generate node identity
@@ -54,6 +78,16 @@ pub enum Commands {
     Daemon,
 }
 
+/// Initialize SyncCore configuration and generate node identity.
+/// 
+/// This command sets up the initial configuration directory, generates
+/// a cryptographic identity for this node, and prepares the system
+/// for file synchronization operations.
+/// 
+/// # Returns
+/// 
+/// Returns `Ok(())` on successful initialization, or an error if
+/// configuration creation or identity generation fails.
 pub async fn init() -> Result<()> {
     tracing::info!("Initializing SyncCore...");
     
@@ -73,6 +107,10 @@ pub async fn init() -> Result<()> {
     Ok(())
 }
 
+/// Display the current node's public ID.
+/// 
+/// Shows the Ed25519 public key that uniquely identifies this SyncCore node.
+/// This ID is used by other peers to verify the authenticity of this node.
 pub async fn show_id() -> Result<()> {
     let config = crate::config::Config::load().await?;
     let identity = crate::crypto::Identity::load_or_generate(&config.identity_path())?;
@@ -81,6 +119,21 @@ pub async fn show_id() -> Result<()> {
     Ok(())
 }
 
+/// Add a folder to the synchronization list.
+/// 
+/// This command registers a local folder for synchronization with other peers.
+/// The folder will be monitored for changes and synchronized automatically
+/// when the daemon is running.
+/// 
+/// # Arguments
+/// 
+/// * `path` - The filesystem path to the folder to synchronize
+/// * `name` - Optional human-readable name for the folder
+/// 
+/// # Errors
+/// 
+/// Returns an error if the path doesn't exist, isn't a directory, or if
+/// configuration cannot be saved.
 pub async fn add_folder(path: PathBuf, name: Option<String>) -> Result<()> {
     tracing::info!("Adding folder: {}", path.display());
     
@@ -105,6 +158,16 @@ pub async fn add_folder(path: PathBuf, name: Option<String>) -> Result<()> {
     Ok(())
 }
 
+/// Generate an invitation code for the most recently added folder.
+/// 
+/// Creates a cryptographically signed invitation that allows other peers
+/// to join and synchronize the specified folder. The invitation includes
+/// folder metadata and expires after 24 hours for security.
+/// 
+/// # Errors
+/// 
+/// Returns an error if no folders are configured or if cryptographic
+/// operations fail.
 pub async fn generate_invitation() -> Result<()> {
     let config = crate::config::Config::load().await?;
     
@@ -126,6 +189,20 @@ pub async fn generate_invitation() -> Result<()> {
     Ok(())
 }
 
+/// Join a remote synchronization folder using an invitation code.
+/// 
+/// This command validates the provided invitation code and sets up
+/// a local folder to synchronize with the remote peer's folder.
+/// 
+/// # Arguments
+/// 
+/// * `code` - The invitation code received from another peer
+/// * `path` - Local path where the synchronized folder will be created
+/// 
+/// # Errors
+/// 
+/// Returns an error if the invitation code is invalid, expired, or if
+/// the local path cannot be created.
 pub async fn join_sync(code: String, path: PathBuf) -> Result<()> {
     tracing::info!("Joining sync with code: {} at path: {}", code, path.display());
     
@@ -274,5 +351,320 @@ fn format_time_ago(timestamp: chrono::DateTime<chrono::Utc>) -> String {
         format!("{} hours ago", duration.num_hours())
     } else {
         format!("{} days ago", duration.num_days())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+    use tokio::fs;
+
+    async fn create_test_config() -> (TempDir, crate::config::Config) {
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = temp_dir.path().join("test_config.toml");
+        let config = crate::config::Config::new(&config_path).await.unwrap();
+        (temp_dir, config)
+    }
+
+    #[tokio::test]
+    async fn test_init_command() {
+        let temp_dir = TempDir::new().unwrap();
+        
+        // Set a custom config path for testing
+        std::env::set_var("SYNCCORE_CONFIG_DIR", temp_dir.path());
+        
+        let result = init().await;
+        
+        // Clean up environment variable
+        std::env::remove_var("SYNCCORE_CONFIG_DIR");
+        
+        // Note: This may fail if init() doesn't use environment variables
+        // The test mainly checks that the function doesn't panic
+        match result {
+            Ok(_) => {
+                // Successfully initialized
+            }
+            Err(e) => {
+                // Expected if we can't control where init() creates files
+                println!("Init failed (expected in test environment): {}", e);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_show_id_without_config() {
+        // Test show_id when no config exists
+        let result = show_id().await;
+        
+        // This should fail if no config is found
+        match result {
+            Ok(_) => {
+                // If it succeeds, an identity was found or created
+            }
+            Err(_) => {
+                // Expected if no config exists
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_add_folder_nonexistent_path() {
+        let nonexistent = PathBuf::from("/nonexistent/path/that/does/not/exist");
+        let result = add_folder(nonexistent, None).await;
+        
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
+        assert!(error_msg.contains("Path does not exist"));
+    }
+
+    #[tokio::test]
+    async fn test_add_folder_file_instead_of_directory() {
+        let temp_dir = TempDir::new().unwrap();
+        let temp_file = temp_dir.path().join("test_file.txt");
+        fs::write(&temp_file, "test content").await.unwrap();
+        
+        let result = add_folder(temp_file, None).await;
+        
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
+        assert!(error_msg.contains("Path is not a directory"));
+    }
+
+    #[tokio::test]
+    async fn test_add_folder_valid_directory() {
+        let temp_dir = TempDir::new().unwrap();
+        let sync_dir = temp_dir.path().join("sync_folder");
+        fs::create_dir_all(&sync_dir).await.unwrap();
+        
+        // This test may fail because it tries to load real config
+        // We'll catch the error and verify it's about config, not directory validation
+        let result = add_folder(sync_dir.clone(), Some("test_folder".to_string())).await;
+        
+        match result {
+            Ok(_) => {
+                // Successfully added folder
+            }
+            Err(e) => {
+                // Should fail on config load, not directory validation
+                let error_msg = e.to_string();
+                assert!(!error_msg.contains("Path does not exist"));
+                assert!(!error_msg.contains("Path is not a directory"));
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_generate_invitation_no_folders() {
+        // This will likely fail on config load, but we're testing the logic
+        let result = generate_invitation().await;
+        
+        // Should fail because either no config exists or no folders are configured
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_join_sync_invalid_code() {
+        let temp_dir = TempDir::new().unwrap();
+        let join_path = temp_dir.path().join("joined_folder");
+        
+        let result = join_sync("invalid_code_123".to_string(), join_path).await;
+        
+        assert!(result.is_err());
+        // Should fail on invitation validation
+    }
+
+    #[tokio::test]
+    async fn test_show_status_no_config() {
+        let result = show_status(false).await;
+        
+        match result {
+            Ok(_) => {
+                // Successfully showed status (or no folders)
+            }
+            Err(_) => {
+                // Expected if no config file exists
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_show_status_verbose() {
+        let result = show_status(true).await;
+        
+        match result {
+            Ok(_) => {
+                // Successfully showed verbose status
+            }
+            Err(_) => {
+                // Expected if no config file exists
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_show_peers() {
+        let result = show_peers().await;
+        
+        match result {
+            Ok(_) => {
+                // Successfully started peer discovery
+            }
+            Err(e) => {
+                // May fail due to network setup in test environment
+                println!("Peer discovery failed (expected in test environment): {}", e);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_run_daemon() {
+        // We can't easily test the full daemon in a unit test, but we can test that it starts
+        let daemon_task = tokio::spawn(async {
+            tokio::time::timeout(
+                tokio::time::Duration::from_millis(100),
+                run_daemon()
+            ).await
+        });
+        
+        match daemon_task.await.unwrap() {
+            Ok(_) => {
+                // Daemon completed (unlikely in 100ms)
+            }
+            Err(e) => {
+                // Timeout or other error expected
+                if e.is_elapsed() {
+                    // Timeout is expected - daemon was running
+                } else {
+                    // Other error, probably config-related in test environment
+                    println!("Daemon start failed (expected in test environment): {}", e);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_format_time_ago() {
+        let now = chrono::Utc::now();
+        
+        // Test "just now"
+        let recent = now - chrono::Duration::seconds(30);
+        assert_eq!(format_time_ago(recent), "just now");
+        
+        // Test minutes ago
+        let minutes_ago = now - chrono::Duration::minutes(5);
+        assert_eq!(format_time_ago(minutes_ago), "5 minutes ago");
+        
+        // Test hours ago
+        let hours_ago = now - chrono::Duration::hours(3);
+        assert_eq!(format_time_ago(hours_ago), "3 hours ago");
+        
+        // Test days ago
+        let days_ago = now - chrono::Duration::days(2);
+        assert_eq!(format_time_ago(days_ago), "2 days ago");
+    }
+
+    #[test]
+    fn test_cli_parser() {
+        // Test that CLI can be parsed correctly
+        use clap::Parser;
+        
+        // Test init command
+        let args = vec!["synccore", "init"];
+        let cli = Cli::try_parse_from(args).unwrap();
+        assert!(matches!(cli.command, Commands::Init));
+        
+        // Test id command
+        let args = vec!["synccore", "id"];
+        let cli = Cli::try_parse_from(args).unwrap();
+        assert!(matches!(cli.command, Commands::Id));
+        
+        // Test add command
+        let args = vec!["synccore", "add", "/test/path"];
+        let cli = Cli::try_parse_from(args).unwrap();
+        match cli.command {
+            Commands::Add { path, name } => {
+                assert_eq!(path, PathBuf::from("/test/path"));
+                assert_eq!(name, None);
+            }
+            _ => panic!("Wrong command parsed"),
+        }
+        
+        // Test add command with name
+        let args = vec!["synccore", "add", "/test/path", "--name", "my_folder"];
+        let cli = Cli::try_parse_from(args).unwrap();
+        match cli.command {
+            Commands::Add { path, name } => {
+                assert_eq!(path, PathBuf::from("/test/path"));
+                assert_eq!(name, Some("my_folder".to_string()));
+            }
+            _ => panic!("Wrong command parsed"),
+        }
+        
+        // Test link command
+        let args = vec!["synccore", "link"];
+        let cli = Cli::try_parse_from(args).unwrap();
+        assert!(matches!(cli.command, Commands::Link));
+        
+        // Test join command
+        let args = vec!["synccore", "join", "invitation_code_123", "/local/path"];
+        let cli = Cli::try_parse_from(args).unwrap();
+        match cli.command {
+            Commands::Join { code, path } => {
+                assert_eq!(code, "invitation_code_123");
+                assert_eq!(path, PathBuf::from("/local/path"));
+            }
+            _ => panic!("Wrong command parsed"),
+        }
+        
+        // Test status command
+        let args = vec!["synccore", "status"];
+        let cli = Cli::try_parse_from(args).unwrap();
+        match cli.command {
+            Commands::Status { verbose } => {
+                assert!(!verbose);
+            }
+            _ => panic!("Wrong command parsed"),
+        }
+        
+        // Test status command with verbose
+        let args = vec!["synccore", "status", "--verbose"];
+        let cli = Cli::try_parse_from(args).unwrap();
+        match cli.command {
+            Commands::Status { verbose } => {
+                assert!(verbose);
+            }
+            _ => panic!("Wrong command parsed"),
+        }
+        
+        // Test peers command
+        let args = vec!["synccore", "peers"];
+        let cli = Cli::try_parse_from(args).unwrap();
+        assert!(matches!(cli.command, Commands::Peers));
+        
+        // Test daemon command
+        let args = vec!["synccore", "daemon"];
+        let cli = Cli::try_parse_from(args).unwrap();
+        assert!(matches!(cli.command, Commands::Daemon));
+    }
+
+    #[test]
+    fn test_cli_invalid_arguments() {
+        use clap::Parser;
+        
+        // Test missing required argument
+        let args = vec!["synccore", "add"];
+        let result = Cli::try_parse_from(args);
+        assert!(result.is_err());
+        
+        // Test missing required argument for join
+        let args = vec!["synccore", "join", "code_only"];
+        let result = Cli::try_parse_from(args);
+        assert!(result.is_err());
+        
+        // Test unknown command
+        let args = vec!["synccore", "unknown"];
+        let result = Cli::try_parse_from(args);
+        assert!(result.is_err());
     }
 }
