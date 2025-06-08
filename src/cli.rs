@@ -458,9 +458,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_generate_invitation_no_folders() {
-        // This will likely fail on config load, but we're testing the logic
+        // Ensure a clean config directory for this test
+        let temp_dir = TempDir::new().unwrap();
+        std::env::set_var("SLYSYNC_CONFIG_DIR", temp_dir.path());
+
         let result = generate_invitation().await;
-        
+
+        // Clean up environment variable
+        std::env::remove_var("SLYSYNC_CONFIG_DIR");
+
         // Should fail because either no config exists or no folders are configured
         assert!(result.is_err());
     }
