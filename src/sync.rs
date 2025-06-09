@@ -260,7 +260,59 @@ impl SyncService {
     async fn handle_file_removed(&self, path: &Path) -> Result<()> {
         info!("File removed: {}", path.display());
         
-        // TODO: Propagate deletion to peers
+        let relative_path = self.get_relative_path(path)?;
+        
+        // Remove file manifest
+        let manifest = {
+            let mut manifests = self.file_manifests.write().await;
+            manifests.remove(&relative_path)
+        };
+        
+        // Broadcast deletion to peers if P2P service is available
+        if let Some(p2p_service) = &self.p2p_service {
+            if let Err(e) = p2p_service.broadcast_file_deletion(&relative_path).await {
+                warn!("Failed to broadcast file deletion: {}", e);
+            }
+        }
+        
+        // Clean up unreferenced chunks if we had a manifest
+        if let Some(manifest) = manifest {
+            for chunk_hash in manifest.chunk_hashes {
+                if !self.is_chunk_referenced(&chunk_hash).await {
+                    if let Err(e) = self.chunk_store.remove_chunk_ref(&chunk_hash).await {
+                        warn!("Failed to remove unreferenced chunk: {}", e);
+                    }
+                }
+            }
+        }
+        
+        Ok(())
+    }
+    
+    async fn is_chunk_referenced(&self, chunk_hash: &[u8; 32]) -> bool {
+        let manifests = self.file_manifests.read().await;
+        manifests.values().any(|m| m.chunk_hashes.contains(chunk_hash))
+    }
+    
+    pub async fn handle_peer_file_deletion(&self, path: &str) -> Result<()> {
+        info!("Received file deletion notification: {}", path);
+        
+        // Remove local manifest if exists
+        let manifest = {
+            let mut manifests = self.file_manifests.write().await;
+            manifests.remove(path)
+        };
+        
+        // Clean up unreferenced chunks
+        if let Some(manifest) = manifest {
+            for chunk_hash in manifest.chunk_hashes {
+                if !self.is_chunk_referenced(&chunk_hash).await {
+                    if let Err(e) = self.chunk_store.remove_chunk_ref(&chunk_hash).await {
+                        warn!("Failed to remove unreferenced chunk: {}", e);
+                    }
+                }
+            }
+        }
         
         Ok(())
     }

@@ -38,6 +38,7 @@
 //! ```
 
 use anyhow::{anyhow, Result};
+use ed25519_dalek::{PublicKey, Signature};
 use quinn::{ClientConfig, Connection, Endpoint, ServerConfig};
 use rustls::{Certificate, PrivateKey};
 use serde::{Deserialize, Serialize};
@@ -85,6 +86,10 @@ pub enum P2PMessage {
     AuthResponse {
         response: Vec<u8>, // Signed challenge
     },
+    /// Notify about file deletion
+    FileDelete {
+        path: String,
+    },
 }
 
 /// Information about a discovered peer
@@ -105,6 +110,7 @@ pub struct PeerConnection {
     pub address: SocketAddr,
     connection: Connection,
     last_activity: Arc<RwLock<Instant>>,
+    authenticated: bool,
 }
 
 impl PeerConnection {
@@ -226,6 +232,7 @@ impl P2PService {
             address: addr,
             connection,
             last_activity: Arc::new(RwLock::new(Instant::now())),
+            authenticated: false,
         };
         
         // Perform authentication handshake
@@ -243,6 +250,7 @@ impl P2PService {
             address: connection.address,
             connection: connection.connection.clone(),
             last_activity: connection.last_activity.clone(),
+            authenticated: connection.authenticated,
         })
     }
     
@@ -285,6 +293,21 @@ impl P2PService {
         
         Ok(())
     }
+
+    pub async fn broadcast_file_deletion(&self, path: &str) -> Result<()> {
+        let message = P2PMessage::FileDelete {
+            path: path.to_string(),
+        };
+        
+        let connections = self.connections.read().await;
+        for connection in connections.values() {
+            if let Err(e) = connection.send_message(&message).await {
+                warn!("Failed to send file deletion to peer {}: {}", connection.peer_id, e);
+            }
+        }
+        
+        Ok(())
+    }
     
     pub async fn request_chunk_from_peer(
         &self,
@@ -292,23 +315,34 @@ impl P2PService {
         chunk_hash: [u8; 32],
         chunk_index: u32,
     ) -> Result<Vec<u8>> {
+        let request_manager = self.request_manager
+            .as_ref()
+            .ok_or_else(|| anyhow!("RequestManager not initialized"))?;
+
         let connections = self.connections.read().await;
-        
-        if let Some(connection) = connections.get(peer_id) {
-            let request = P2PMessage::ChunkRequest {
-                hash: chunk_hash,
-                chunk_id: chunk_index,
-            };
-            
-            connection.send_message(&request).await?;
-            
-            // TODO: Implement proper request/response matching using RequestManager
-            // For now, return empty vec as placeholder
-            warn!("Chunk request sent to peer {}, but response handling not fully implemented", peer_id);
-            Ok(Vec::new())
-        } else {
-            Err(anyhow!("Peer {} not connected", peer_id))
-        }
+        let connection = connections.get(peer_id)
+            .ok_or_else(|| anyhow!("Peer {} not connected", peer_id))?;
+
+        request_manager.send_request(
+            peer_id.to_string(),
+            crate::requests::messages::chunk_request(chunk_hash, chunk_index),
+            |request| async move {
+                let message = P2PMessage::ChunkRequest {
+                    hash: chunk_hash,
+                    chunk_id: chunk_index,
+                };
+                connection.send_message(&message).await
+            },
+            Duration::from_secs(10),
+        ).await.map(|response| {
+            match response.response_type {
+                crate::requests::P2PResponseType::ChunkResponse { data, .. } => Ok(data),
+                crate::requests::P2PResponseType::Error { message } => {
+                    Err(anyhow!("Peer error: {}", message))
+                }
+                _ => Err(anyhow!("Unexpected response type")),
+            }
+        })?
     }
 
     // Private helper methods
@@ -359,6 +393,7 @@ impl P2PService {
                                 address: connection.remote_address(),
                                 connection: connection.clone(),
                                 last_activity: Arc::new(RwLock::new(Instant::now())),
+                                authenticated: false,
                             };
                             
                             connections.write().await.insert(peer_id.clone(), peer_connection);
@@ -474,6 +509,14 @@ impl P2PService {
             P2PMessage::Announce { .. } => {
                 // Handled by discovery system
                 debug!("Received announce message from {}", peer_id);
+            }
+            P2PMessage::FileDelete { path } => {
+                info!("Received file deletion from {}: {}", peer_id, path);
+                if let Some(sync_service) = &sync_service {
+                    if let Err(e) = sync_service.handle_peer_file_deletion(&path).await {
+                        warn!("Failed to handle file deletion from {}: {}", peer_id, e);
+                    }
+                }
             }
         }
     }
@@ -623,20 +666,71 @@ impl P2PService {
             P2PMessage::Announce { .. } => {
                 // Handled by discovery system
             }
+            P2PMessage::FileDelete { path } => {
+                info!("Received file deletion from {}: {}", peer_id, path);
+                if let Some(sync_service) = &self.sync_service {
+                    let _ = sync_service.handle_peer_file_deletion(&path).await;
+                }
+            }
         }
     }
     
-    #[allow(dead_code)]
     async fn authenticate_peer(&self, peer: &PeerConnection) -> Result<()> {
-        // Generate challenge
+        // Generate random challenge
         let challenge = rand::random::<[u8; 32]>();
         
+        // Send challenge to peer
         let challenge_msg = P2PMessage::AuthChallenge { challenge };
         peer.send_message(&challenge_msg).await?;
         
-        // TODO: Wait for and verify response
+        // Wait for response with timeout
+        let response = tokio::time::timeout(
+            Duration::from_secs(5),
+            self.wait_for_auth_response(peer.peer_id.clone())
+        ).await??;
         
+        // Verify signature
+        let peer_info = self.peers.read().await
+            .get(&peer.peer_id)
+            .ok_or_else(|| anyhow!("Peer not found"))?;
+            
+        let public_key = ed25519_dalek::PublicKey::from_bytes(&peer_info.public_key)
+            .map_err(|_| anyhow!("Invalid peer public key"))?;
+            
+        let signature = Signature::from_bytes(&response.signature)
+            .map_err(|_| anyhow!("Invalid signature bytes"))?;
+        public_key.verify(&response.challenge, &signature)
+            .map_err(|_| anyhow!("Invalid signature"))?;
+        
+        // Mark peer as authenticated
+        self.peers.write().await
+            .get_mut(&peer.peer_id)
+            .ok_or_else(|| anyhow!("Peer not found"))?
+            .authenticated = true;
+
+        // Update connection to only allow authenticated peers
+        self.connections.write().await
+            .get_mut(&peer.peer_id)
+            .ok_or_else(|| anyhow!("Peer connection not found"))?
+            .authenticated = true;
+            
+        info!("Successfully authenticated peer {}", peer.peer_id);
         Ok(())
+    }
+    
+    async fn wait_for_auth_response(&self, peer_id: String) -> Result<crate::requests::AuthResponse> {
+        let mut message_rx = self.message_rx.write().await
+            .as_mut()
+            .ok_or_else(|| anyhow!("Message handler not running"))?;
+            
+        while let Some((id, message)) = message_rx.recv().await {
+            if id == peer_id {
+                if let P2PMessage::AuthResponse { response } = message {
+                    return Ok(serde_json::from_slice(&response)?);
+                }
+            }
+        }
+        Err(anyhow!("Connection closed while waiting for auth response"))
     }
     
     #[allow(dead_code)]
