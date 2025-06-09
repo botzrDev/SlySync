@@ -5,9 +5,7 @@
 //! basic networking functionality.
 
 use std::process::Command;
-use std::path::PathBuf;
 use tempfile::TempDir;
-use tokio::fs;
 
 /// Test the init command creates proper configuration
 #[test]

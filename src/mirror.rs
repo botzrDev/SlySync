@@ -43,7 +43,9 @@ use tracing::{info, warn, error, debug};
 pub struct MirrorConfig {
     pub source: PathBuf,
     pub destination: PathBuf,
+    #[allow(dead_code)]
     pub name: Option<String>,
+    #[allow(dead_code)]
     pub bidirectional: bool,
 }
 

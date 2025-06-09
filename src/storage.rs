@@ -164,12 +164,14 @@ impl ChunkStore {
     }
 
     /// Get chunk metadata
+    #[allow(dead_code)]
     pub fn get_chunk_metadata(&self, hash: &[u8; 32]) -> Option<ChunkMetadata> {
         let hash_key = hex::encode(hash);
         self.chunk_index.read().get(&hash_key).cloned()
     }
 
     /// Remove a chunk (decrements ref count, removes if zero)
+    #[allow(dead_code)]
     pub async fn remove_chunk_ref(&self, hash: &[u8; 32]) -> Result<()> {
         let hash_key = hex::encode(hash);
         let should_delete = {
@@ -192,6 +194,7 @@ impl ChunkStore {
     }
 
     /// Increment chunk reference count
+    #[allow(dead_code)]
     pub async fn add_chunk_ref(&self, hash: &[u8; 32]) -> Result<()> {
         let hash_key = hex::encode(hash);
         {
@@ -205,6 +208,7 @@ impl ChunkStore {
     }
 
     /// Delete a chunk from storage
+    #[allow(dead_code)]
     async fn delete_chunk(&self, hash: &[u8; 32]) -> Result<()> {
         let chunk_path = self.get_chunk_path(hash);
         let hash_key = hex::encode(hash);
@@ -223,6 +227,7 @@ impl ChunkStore {
     }
 
     /// Get all stored chunks
+    #[allow(dead_code)]
     pub fn list_chunks(&self) -> Vec<[u8; 32]> {
         self.chunk_index.read()
             .keys()
@@ -241,6 +246,7 @@ impl ChunkStore {
     }
 
     /// Get storage statistics
+    #[allow(dead_code)]
     pub fn get_stats(&self) -> StorageStats {
         let index = self.chunk_index.read();
         let total_chunks = index.len();
@@ -255,11 +261,13 @@ impl ChunkStore {
     }
 
     /// Get the total number of chunks in the store
+    #[allow(dead_code)]
     pub fn chunk_count(&self) -> usize {
         self.chunk_index.read().len()
     }
 
     /// Clean up orphaned chunks
+    #[allow(dead_code)]
     pub async fn cleanup(&self) -> Result<()> {
         let now = chrono::Utc::now();
         let cutoff = now - chrono::Duration::days(7); // Remove unused chunks after 7 days
@@ -368,6 +376,7 @@ impl ChunkStore {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct StorageStats {
     pub total_chunks: usize,
     pub total_size: u64,
@@ -407,6 +416,7 @@ impl FileManifest {
         }
     }
 
+    #[allow(dead_code)]
     pub fn is_chunk_stored(&self, chunk_index: usize) -> bool {
         self.chunks_stored.get(chunk_index).copied().unwrap_or(false)
     }
@@ -424,6 +434,7 @@ impl FileManifest {
             .collect()
     }
 
+    #[allow(dead_code)]
     pub fn completion_percentage(&self) -> f64 {
         if self.chunks_stored.is_empty() {
             return 100.0;

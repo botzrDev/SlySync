@@ -97,6 +97,7 @@ impl Identity {
         hex::encode(self.signing_key.verifying_key().as_bytes())
     }
     
+    #[allow(dead_code)]
     pub fn public_key(&self) -> VerifyingKey {
         self.signing_key.verifying_key()
     }
@@ -105,6 +106,7 @@ impl Identity {
         self.signing_key.verifying_key().to_bytes()
     }
     
+    #[allow(dead_code)]
     pub fn private_key_bytes(&self) -> [u8; 32] {
         self.signing_key.to_bytes()
     }
@@ -117,6 +119,7 @@ impl Identity {
         self.signing_key.sign(data)
     }
     
+    #[allow(dead_code)]
     pub fn verify(&self, data: &[u8], signature: &Signature) -> bool {
         self.signing_key.verifying_key().verify(data, signature).is_ok()
     }
@@ -188,6 +191,7 @@ pub fn hash_file_chunk(data: &[u8]) -> [u8; 32] {
     blake3::hash(data).into()
 }
 
+#[allow(dead_code)]
 pub fn hash_to_hex(hash: &[u8; 32]) -> String {
     hex::encode(hash)
 }
@@ -278,7 +282,9 @@ mod tests {
     #[test]
     fn test_invitation_code_generation() {
         let folder_id = "test-folder-123";
-        let invitation = generate_invitation_code(folder_id).unwrap();
+        let identity = Identity::generate().unwrap();
+        let listen_addr = "127.0.0.1:8080".parse().unwrap();
+        let invitation = generate_invitation_code(folder_id, &identity, listen_addr).unwrap();
         
         // Should be base64 encoded
         assert!(!invitation.is_empty());
@@ -291,12 +297,14 @@ mod tests {
     #[test]
     fn test_invitation_code_validation() {
         let folder_id = "test-folder-123";
-        let invitation = generate_invitation_code(folder_id).unwrap();
+        let identity = Identity::generate().unwrap();
+        let listen_addr = "127.0.0.1:8080".parse().unwrap();
+        let invitation = generate_invitation_code(folder_id, &identity, listen_addr).unwrap();
         
-        let folder_info = validate_invitation_code(&invitation).unwrap();
+        let folder_info = validate_invitation_code(&invitation, Some(&identity.public_key())).unwrap();
         
         assert_eq!(folder_info.folder_id, folder_id);
-        assert_eq!(folder_info.peer_id, "temp_peer_id");
+        assert_eq!(folder_info.peer_id, identity.peer_id());
         assert_eq!(folder_info.name, None);
     }
 
@@ -315,7 +323,7 @@ mod tests {
         let encoded = BASE64_STANDARD.encode(serde_json::to_vec(&invitation).unwrap());
         
         // Should fail validation due to expiration
-        assert!(validate_invitation_code(&encoded).is_err());
+        assert!(validate_invitation_code(&encoded, None).is_err());
     }
 
     #[test]

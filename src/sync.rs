@@ -54,6 +54,7 @@ pub struct SyncService {
     file_event_rx: mpsc::Receiver<notify::Result<Event>>,
     p2p_service: Option<Arc<crate::p2p::P2PService>>,
     chunk_store: Arc<ChunkStore>,
+    #[allow(dead_code)]
     request_manager: Arc<RequestManager>,
     file_manifests: Arc<tokio::sync::RwLock<std::collections::HashMap<String, FileManifest>>>,
 }
@@ -107,10 +108,12 @@ impl SyncService {
         self.p2p_service = Some(p2p_service);
     }
     
+    #[allow(dead_code)]
     pub fn get_chunk_store(&self) -> Arc<ChunkStore> {
         self.chunk_store.clone()
     }
     
+    #[allow(dead_code)]
     pub fn get_request_manager(&self) -> Arc<RequestManager> {
         self.request_manager.clone()
     }
@@ -402,6 +405,7 @@ impl SyncService {
     }
     
     /// Handle incoming chunk from peer
+    #[allow(dead_code)]
     pub async fn handle_chunk_received(
         &self,
         chunk_hash: [u8; 32],
@@ -514,7 +518,7 @@ mod tests {
 
     async fn create_test_config_with_folder(temp_dir: &TempDir) -> crate::config::Config {
         let config_path = temp_dir.path().join("test_config.toml");
-        let mut config = crate::config::Config::new();
+        let mut config = crate::config::Config::init().await.unwrap();
         config.config_file_path = config_path;
         
         // Add a sync folder

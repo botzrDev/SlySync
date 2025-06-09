@@ -91,7 +91,9 @@ pub enum P2PMessage {
 #[derive(Clone, Debug)]
 pub struct PeerInfo {
     pub id: String,
+    #[allow(dead_code)]
     pub address: SocketAddr,
+    #[allow(dead_code)]
     pub public_key: Vec<u8>,
     pub last_seen: chrono::DateTime<chrono::Utc>,
     pub authenticated: bool,
@@ -119,6 +121,7 @@ impl PeerConnection {
         Ok(())
     }
     
+    #[allow(dead_code)]
     pub async fn request_file_chunk(&self, hash: &[u8; 32], chunk_id: u32) -> Result<Vec<u8>> {
         let request = P2PMessage::ChunkRequest {
             hash: *hash,
@@ -135,6 +138,7 @@ impl PeerConnection {
         Ok(Vec::new())
     }
     
+    #[allow(dead_code)]
     pub async fn is_alive(&self) -> bool {
         let last_activity = *self.last_activity.read().await;
         last_activity.elapsed() < Duration::from_secs(30)
@@ -209,6 +213,7 @@ impl P2PService {
         Ok(peers.values().cloned().collect())
     }
     
+    #[allow(dead_code)]
     pub async fn connect_to_peer(&self, addr: SocketAddr) -> Result<PeerConnection> {
         info!("Connecting to peer at {}", addr);
         
@@ -241,6 +246,7 @@ impl P2PService {
         })
     }
     
+    #[allow(dead_code)]
     pub async fn connect_via_invitation(&self, invitation_code: &str) -> Result<PeerConnection> {
         info!("Connecting via invitation code");
         
@@ -564,6 +570,7 @@ impl P2PService {
         }
     }
     
+    #[allow(dead_code)]
     async fn handle_message(
         &self,
         peer_id: String,
@@ -619,6 +626,7 @@ impl P2PService {
         }
     }
     
+    #[allow(dead_code)]
     async fn authenticate_peer(&self, peer: &PeerConnection) -> Result<()> {
         // Generate challenge
         let challenge = rand::random::<[u8; 32]>();
@@ -631,12 +639,15 @@ impl P2PService {
         Ok(())
     }
     
+    #[allow(dead_code)]
     pub fn set_chunk_store(&mut self, chunk_store: Arc<crate::storage::ChunkStore>) {
         self.chunk_store = Some(chunk_store);
     }
+    #[allow(dead_code)]
     pub fn set_request_manager(&mut self, request_manager: Arc<crate::requests::RequestManager>) {
         self.request_manager = Some(request_manager);
     }
+    #[allow(dead_code)]
     pub fn set_sync_service(&mut self, sync_service: Arc<crate::sync::SyncService>) {
         self.sync_service = Some(sync_service);
     }
@@ -689,8 +700,8 @@ struct SkipServerVerification;
 impl rustls::client::ServerCertVerifier for SkipServerVerification {
     fn verify_server_cert(
         &self,
-        _end_entity: &Certificate,
-        _intermediates: &[Certificate],
+        _end_entity: &rustls::Certificate,
+        _intermediates: &[rustls::Certificate],
         _server_name: &rustls::ServerName,
         _scts: &mut dyn Iterator<Item = &[u8]>,
         _ocsp_response: &[u8],
@@ -704,6 +715,7 @@ impl rustls::client::ServerCertVerifier for SkipServerVerification {
 mod tests {
     use super::*;
     use tempfile::TempDir;
+    use rustls::client::ServerCertVerifier;
 
     async fn create_test_identity() -> crate::crypto::Identity {
         crate::crypto::Identity::generate().unwrap()
@@ -956,7 +968,7 @@ mod tests {
         
         // Test that the verifier always returns Ok
         let cert = Certificate(vec![1, 2, 3]);
-        let server_name = rustls::ServerName::try_from("localhost").unwrap();
+        let server_name = "localhost".try_into().unwrap();
         let mut scts = std::iter::empty();
         let now = std::time::SystemTime::now();
         

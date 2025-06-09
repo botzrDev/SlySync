@@ -8,10 +8,10 @@ use tokio::fs;
 
 #[tokio::test]
 async fn test_config_creation_and_loading() {
-    let temp_dir = TempDir::new().unwrap();
+    let _temp_dir = TempDir::new().unwrap();
     
     // Set config dir for this test
-    std::env::set_var("SLYSYNC_CONFIG_DIR", temp_dir.path());
+    std::env::set_var("SLYSYNC_CONFIG_DIR", _temp_dir.path());
 
     // Create new config
     let config = slysync::config::Config::init().await.unwrap();
@@ -99,7 +99,7 @@ async fn test_config_serialization() {
 
 #[tokio::test]
 async fn test_config_concurrent_access() {
-    let temp_dir = TempDir::new().unwrap();
+    let _temp_dir = TempDir::new().unwrap();
     
     // Create initial config
     let _config1 = slysync::config::Config::init().await.unwrap();

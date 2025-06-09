@@ -6,6 +6,8 @@
 2. [Installation](#installation)
 3. [Quick Start Guide](#quick-start-guide)
 4. [Command Reference](#command-reference)
+   - [P2P Synchronization Commands](#p2p-synchronization-commands)
+   - [Local Mirror Commands](#local-mirror-commands)
 5. [Configuration](#configuration)
 6. [Security](#security)
 7. [Troubleshooting](#troubleshooting)
@@ -21,6 +23,7 @@ SlySync is a next-generation, peer-to-peer file synchronization utility that all
 - **End-to-End Encryption**: All data is encrypted using modern cryptography
 - **Chunk-based Storage**: Efficient deduplication and incremental sync
 - **Real-time Monitoring**: Instant file change detection and propagation
+- **Local Folder Mirroring**: Mirror folders between local drives without P2P networking
 - **Cross-platform**: Works on Linux, macOS, and Windows
 - **Offline-first**: Works without internet connection on local networks
 
@@ -97,7 +100,31 @@ slysync daemon
 
 Your files are now being synchronized automatically!
 
+### Local Folder Mirroring
+
+SlySync also supports local folder mirroring, which allows you to mirror files between folders on the same computer or different drives without P2P networking.
+
+#### One-time Mirror
+
+To copy files from one folder to another:
+
+```bash
+slysync mirror /source/folder /destination/folder --name "My Backup"
+```
+
+#### Continuous Mirror (Daemon Mode)
+
+To set up continuous real-time mirroring:
+
+```bash
+slysync mirror /source/folder /destination/folder --daemon --name "Live Mirror"
+```
+
+This will monitor the source folder and automatically sync any changes to the destination folder in real-time.
+
 ## Command Reference
+
+### P2P Synchronization Commands
 
 ### `slysync init`
 
@@ -266,6 +293,64 @@ Listening on port: 41337
 📂 Monitoring 2 sync folder(s)
 ```
 
+### Local Mirror Commands
+
+### `slysync mirror`
+
+Mirror a local folder to another local folder with optional real-time synchronization.
+
+**Usage:**
+```bash
+slysync mirror <source> <destination> [--name <name>] [--daemon]
+```
+
+**Arguments:**
+- `<source>` - Source folder path to mirror from
+- `<destination>` - Destination folder path to mirror to
+- `--name, -n <name>` - Optional human-readable name for this mirror setup
+- `--daemon, -d` - Run as a daemon with continuous real-time monitoring
+
+**Examples:**
+
+One-time mirror operation:
+```bash
+$ slysync mirror /home/user/Documents /backup/Documents --name "Document Backup"
+🔄 Running one-time mirror operation...
+Mirror: Document Backup
+Source: /home/user/Documents
+Destination: /backup/Documents
+✅ Mirror completed successfully!
+   Files copied: 1,234
+   Total size: 567.8 MB
+   Duration: 12.3 seconds
+```
+
+Continuous daemon mode:
+```bash
+$ slysync mirror /home/user/Documents /backup/Documents --daemon --name "Live Backup"
+🔄 Starting mirror daemon...
+Mirror: Live Backup
+Source: /home/user/Documents
+Destination: /backup/Documents
+💚 Mirror daemon is running. Press Ctrl+C to stop.
+
+# Files are automatically synchronized in real-time
+# Any changes to source folder are immediately copied to destination
+```
+
+**Use Cases:**
+- **Local Backups**: Mirror important folders to external drives
+- **Cross-Drive Sync**: Keep files synchronized between different drives
+- **Development Workflows**: Mirror source code to different locations
+- **Media Management**: Sync photos/videos between drives automatically
+
+**Features:**
+- **Real-time Monitoring**: File changes detected in under 100ms
+- **Incremental Sync**: Only changed files are copied
+- **Directory Structure**: Preserves folder hierarchy and permissions
+- **Cross-Platform**: Works on all supported operating systems
+- **Graceful Shutdown**: Ctrl+C stops daemon cleanly
+
 ## Configuration
 
 SlySync stores its configuration in platform-appropriate directories:
@@ -388,6 +473,26 @@ SlySync does NOT protect against:
 2. Reduce the number of files in sync folders
 3. Add file filters to exclude unnecessary files
 
+#### Mirror operation fails
+
+**Problem:** Mirror command fails with permission or path errors.
+
+**Solutions:**
+1. Verify source folder exists and is readable
+2. Check destination folder permissions (SlySync will create it if needed)
+3. Ensure sufficient disk space at destination
+4. Run with elevated permissions if accessing system folders
+
+#### Mirror daemon not detecting changes
+
+**Problem:** File changes in source folder are not being mirrored.
+
+**Solutions:**
+1. Restart the mirror daemon
+2. Check file system permissions
+3. Verify source folder is not on a network drive (use local paths)
+4. Monitor daemon output for error messages
+
 ### Log Analysis
 
 Enable debug logging to troubleshoot issues:
@@ -416,6 +521,36 @@ Common log patterns:
 ## Advanced Usage
 
 ### Running as a System Service
+
+#### Mirror Daemon as Service
+
+You can also run mirror operations as system services for automatic startup.
+
+**Linux (systemd) - Mirror Service:**
+
+Create `/etc/systemd/system/slysync-mirror.service`:
+
+```ini
+[Unit]
+Description=SlySync Local Mirror Service
+After=local-fs.target
+
+[Service]
+Type=simple
+User=your-username
+ExecStart=/usr/local/bin/slysync mirror /source/path /dest/path --daemon --name "System Mirror"
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Enable and start:
+```bash
+sudo systemctl enable slysync-mirror
+sudo systemctl start slysync-mirror
+```
 
 #### Linux (systemd)
 
@@ -498,6 +633,35 @@ For large files (>1GB):
 
 ### Integration with Other Tools
 
+#### Mirror Workflows
+
+**Automated Backup Pipeline:**
+```bash
+# Daily mirror of important folders
+0 2 * * * /usr/local/bin/slysync mirror /home/user/Documents /backup/daily/Documents --name "Daily Backup"
+
+# Weekly mirror to external drive  
+0 1 * * 0 /usr/local/bin/slysync mirror /home/user /media/external/weekly/user --name "Weekly Full"
+```
+
+**Development Workflow:**
+```bash
+# Mirror source code to backup drive in real-time
+slysync mirror /home/dev/projects /backup/dev/projects --daemon --name "Dev Backup"
+
+# Mirror to shared network location
+slysync mirror /home/dev/current-project /shared/team/current-project --daemon --name "Team Sync"
+```
+
+**Media Management:**
+```bash
+# Auto-mirror photos from camera import folder
+slysync mirror /home/user/Pictures/Imports /media/nas/Photos --daemon --name "Photo Archive"
+
+# Mirror downloads to organized folders
+slysync mirror /home/user/Downloads /organized/Downloads --daemon --name "Download Organizer"
+```
+
 #### File Exclusion
 
 Create `.syncignore` files (future feature) to exclude:
@@ -567,4 +731,4 @@ SlySync is licensed under the MIT License. See LICENSE for details.
 
 ---
 
-*SlySync v1.0.0 - Last updated: June 8, 2025*
+*SlySync v1.0.0 with Local Folder Mirroring - Last updated: June 9, 2025*

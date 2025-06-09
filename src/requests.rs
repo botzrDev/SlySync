@@ -65,16 +65,27 @@ pub struct RequestManager {
 #[derive(Debug)]
 struct PendingRequest {
     request_id: String,
+    #[allow(dead_code)]
     peer_id: String,
+    #[allow(dead_code)]
     request_type: RequestType,
     response_sender: oneshot::Sender<P2PResponse>,
     created_at: chrono::DateTime<chrono::Utc>,
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 enum RequestType {
-    ChunkRequest { hash: [u8; 32], chunk_id: u32 },
-    AuthChallenge { challenge: [u8; 32] },
+    ChunkRequest { 
+        #[allow(dead_code)]
+        hash: [u8; 32], 
+        #[allow(dead_code)]
+        chunk_id: u32 
+    },
+    AuthChallenge { 
+        #[allow(dead_code)]
+        challenge: [u8; 32] 
+    },
     FileUpdate,
 }
 
@@ -117,6 +128,7 @@ impl RequestManager {
     }
 
     /// Send a request and wait for response
+    #[allow(dead_code)]
     pub async fn send_request<F, Fut>(
         &self,
         peer_id: String,
@@ -204,11 +216,13 @@ impl RequestManager {
     }
 
     /// Get pending request count
+    #[allow(dead_code)]
     pub fn pending_count(&self) -> usize {
         self.pending_requests.read().len()
     }
 
     /// Get pending requests for a specific peer
+    #[allow(dead_code)]
     pub fn pending_for_peer(&self, peer_id: &str) -> Vec<String> {
         self.pending_requests
             .read()
@@ -219,6 +233,7 @@ impl RequestManager {
     }
 
     /// Cancel all pending requests for a peer (when peer disconnects)
+    #[allow(dead_code)]
     pub fn cancel_peer_requests(&self, peer_id: &str) {
         let mut pending_requests = self.pending_requests.write();
         let to_remove: Vec<String> = pending_requests
@@ -276,6 +291,7 @@ impl RequestManager {
     }
 
     /// Get pending request count (public version)
+    #[allow(dead_code)]
     pub async fn pending_request_count(&self) -> usize {
         self.pending_requests.read().len()
     }
@@ -285,22 +301,27 @@ impl RequestManager {
 pub mod messages {
     use super::*;
 
+    #[allow(dead_code)]
     pub fn chunk_request(hash: [u8; 32], chunk_id: u32) -> P2PRequestType {
         P2PRequestType::ChunkRequest { hash, chunk_id }
     }
 
+    #[allow(dead_code)]
     pub fn chunk_response(hash: [u8; 32], chunk_id: u32, data: Vec<u8>) -> P2PResponseType {
         P2PResponseType::ChunkResponse { hash, chunk_id, data }
     }
 
+    #[allow(dead_code)]
     pub fn auth_challenge(challenge: [u8; 32]) -> P2PRequestType {
         P2PRequestType::AuthChallenge { challenge }
     }
 
+    #[allow(dead_code)]
     pub fn auth_response(response: Vec<u8>) -> P2PResponseType {
         P2PResponseType::AuthResponse { response }
     }
 
+    #[allow(dead_code)]
     pub fn file_update(
         path: String,
         hash: [u8; 32],
@@ -310,10 +331,12 @@ pub mod messages {
         P2PRequestType::FileUpdate { path, hash, size, chunks }
     }
 
+    #[allow(dead_code)]
     pub fn file_update_ack(success: bool, message: String) -> P2PResponseType {
         P2PResponseType::FileUpdateAck { success, message }
     }
 
+    #[allow(dead_code)]
     pub fn error_response(message: String) -> P2PResponseType {
         P2PResponseType::Error { message }
     }

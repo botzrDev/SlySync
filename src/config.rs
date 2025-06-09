@@ -59,19 +59,6 @@ pub struct RemoteFolderInfo {
 }
 
 impl Config {
-    pub fn new() -> Self {
-        Self {
-            node_id: String::new(),
-            listen_port: 41337,
-            bandwidth_limit_up: None,
-            bandwidth_limit_down: None,
-            discovery_enabled: true,
-            sync_folders: Vec::new(),
-            config_file_path: PathBuf::new(),
-            test_data_dir: None,
-        }
-    }
-
     pub async fn init() -> Result<Self> {
         let config_dir = Self::config_dir()?;
         std::fs::create_dir_all(&config_dir)?;
@@ -175,7 +162,6 @@ impl Config {
 mod tests {
     use super::*;
     use tempfile::TempDir;
-    use std::env;
 
     async fn create_test_config() -> (Config, TempDir) {
         let temp_dir = TempDir::new().unwrap();

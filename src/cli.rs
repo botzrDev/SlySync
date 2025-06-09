@@ -450,9 +450,10 @@ mod tests {
     use tempfile::TempDir;
     use tokio::fs;
 
+    #[allow(dead_code)]
     async fn create_test_config() -> (TempDir, crate::config::Config) {
         let temp_dir = TempDir::new().unwrap();
-        let config_path = temp_dir.path().join("test_config.toml");
+        let _config_path = temp_dir.path().join("test_config.toml");
         let config = crate::config::Config::init().await.unwrap();
         (temp_dir, config)
     }
