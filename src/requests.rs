@@ -9,6 +9,7 @@
 //! - **Timeout Management**: Automatically times out requests that don't receive responses
 //! - **Peer Management**: Tracks and cancels requests when peers disconnect
 //! - **Background Cleanup**: Removes stale requests to prevent memory leaks
+//! - **Security Features**: Rate limiting, peer verification, and replay attack prevention
 //! - **Type Safety**: Strongly typed request and response messages
 //! 
 //! ## Architecture
@@ -17,8 +18,9 @@
 //! 1. Generating unique request IDs for each outgoing request
 //! 2. Storing pending requests with oneshot channels for response delivery
 //! 3. Matching incoming responses to pending requests by ID
-//! 4. Delivering responses through channels or timing out
-//! 5. Cleaning up expired or cancelled requests
+//! 4. Verifying peer identity and preventing replay attacks
+//! 5. Delivering responses through channels or timing out
+//! 6. Cleaning up expired or cancelled requests
 //! 
 //! ## Usage Example
 //! 
@@ -56,22 +58,40 @@ use tokio::time::{timeout, Duration};
 use tracing::{debug, warn};
 use uuid::Uuid;
 
-/// Request/Response matching system for P2P communications
+/// Authentication response containing challenge and signature
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuthResponse {
+    pub challenge: [u8; 32],
+    pub signature: Vec<u8>,
+}
+
+/// Request/Response matching system for P2P communications with security features
 #[derive(Clone)]
 pub struct RequestManager {
     pending_requests: Arc<RwLock<HashMap<String, PendingRequest>>>,
+    recent_request_ids: Arc<RwLock<std::collections::HashSet<String>>>,
+    peer_request_counts: Arc<RwLock<HashMap<String, PeerRequestStats>>>,
 }
 
 #[derive(Debug)]
 struct PendingRequest {
     request_id: String,
-    #[allow(dead_code)]
     peer_id: String,
-    #[allow(dead_code)]
     request_type: RequestType,
     response_sender: oneshot::Sender<P2PResponse>,
     created_at: chrono::DateTime<chrono::Utc>,
+    expected_peer_id: String, // The peer we expect the response from
 }
+
+#[derive(Debug, Clone)]
+struct PeerRequestStats {
+    request_count: u32,
+    last_reset: chrono::DateTime<chrono::Utc>,
+    first_seen: chrono::DateTime<chrono::Utc>,
+}
+
+const MAX_REQUESTS_PER_MINUTE: u32 = 60;
+const REQUEST_ID_CACHE_DURATION_MINUTES: i64 = 10;
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -120,6 +140,8 @@ impl RequestManager {
     pub fn new() -> Self {
         let manager = Self {
             pending_requests: Arc::new(RwLock::new(HashMap::new())),
+            recent_request_ids: Arc::new(RwLock::new(std::collections::HashSet::new())),
+            peer_request_counts: Arc::new(RwLock::new(HashMap::new())),
         };
 
         // Start cleanup task
@@ -162,6 +184,7 @@ impl RequestManager {
             },
             response_sender: response_tx,
             created_at: chrono::Utc::now(),
+            expected_peer_id: peer_id.clone(),
         };
 
         // Store pending request
@@ -194,14 +217,32 @@ impl RequestManager {
         }
     }
 
-    /// Handle incoming response
-    pub fn handle_response(&self, response: P2PResponse) -> Result<()> {
+    /// Handle incoming response with security validation
+    pub fn handle_response(&self, response: P2PResponse, responding_peer_id: &str) -> Result<()> {
         let mut pending_requests = self.pending_requests.write();
         
         if let Some(pending) = pending_requests.remove(&response.request_id) {
+            // Security check: Verify response comes from expected peer
+            if pending.expected_peer_id != responding_peer_id {
+                warn!(
+                    "Response security violation: expected from '{}', got from '{}' for request {}",
+                    pending.expected_peer_id, responding_peer_id, response.request_id
+                );
+                return Err(anyhow!("Response from unexpected peer"));
+            }
+            
+            // Check if request is not too old (prevent replay attacks)
+            let age = chrono::Utc::now().signed_duration_since(pending.created_at);
+            if age.num_minutes() > 5 {
+                warn!("Rejecting response to expired request: {} (age: {} minutes)", 
+                      response.request_id, age.num_minutes());
+                return Err(anyhow!("Request too old"));
+            }
+            
             match pending.response_sender.send(response) {
                 Ok(_) => {
-                    debug!("Delivered response for request {}", pending.request_id);
+                    debug!("Delivered response for request {} from peer {}", 
+                           pending.request_id, responding_peer_id);
                     Ok(())
                 }
                 Err(_) => {
@@ -210,9 +251,52 @@ impl RequestManager {
                 }
             }
         } else {
-            warn!("Received response for unknown request: {}", response.request_id);
+            warn!("Received response for unknown request: {} from peer {}", 
+                  response.request_id, responding_peer_id);
             Err(anyhow!("Unknown request ID"))
         }
+    }
+    
+    /// Check if request ID was recently seen (prevent replay attacks)
+    pub fn is_request_id_recent(&self, request_id: &str) -> bool {
+        let recent_ids = self.recent_request_ids.read();
+        recent_ids.contains(request_id)
+    }
+    
+    /// Add request ID to recent cache
+    pub fn mark_request_id_seen(&self, request_id: String) {
+        let mut recent_ids = self.recent_request_ids.write();
+        recent_ids.insert(request_id);
+    }
+    
+    /// Check if peer is within rate limits
+    pub fn check_rate_limit(&self, peer_id: &str) -> Result<()> {
+        let mut peer_stats = self.peer_request_counts.write();
+        let now = chrono::Utc::now();
+        
+        let stats = peer_stats.entry(peer_id.to_string()).or_insert_with(|| {
+            PeerRequestStats {
+                request_count: 0,
+                last_reset: now,
+                first_seen: now,
+            }
+        });
+        
+        // Reset counter if a minute has passed
+        if now.signed_duration_since(stats.last_reset).num_minutes() >= 1 {
+            stats.request_count = 0;
+            stats.last_reset = now;
+        }
+        
+        stats.request_count += 1;
+        
+        if stats.request_count > MAX_REQUESTS_PER_MINUTE {
+            warn!("Rate limit exceeded for peer {}: {} requests in last minute", 
+                  peer_id, stats.request_count);
+            return Err(anyhow!("Rate limit exceeded"));
+        }
+        
+        Ok(())
     }
 
     /// Get pending request count
@@ -258,6 +342,8 @@ impl RequestManager {
     /// Start background cleanup task
     fn start_cleanup_task(&self) {
         let pending_requests = self.pending_requests.clone();
+        let recent_request_ids = self.recent_request_ids.clone();
+        let peer_request_counts = self.peer_request_counts.clone();
         
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(30));
@@ -267,24 +353,47 @@ impl RequestManager {
                 
                 let now = chrono::Utc::now();
                 let timeout_cutoff = now - chrono::Duration::minutes(5);
+                let _cache_cutoff = now - chrono::Duration::minutes(REQUEST_ID_CACHE_DURATION_MINUTES);
                 
-                let mut requests = pending_requests.write();
-                let to_remove: Vec<String> = requests
-                    .values()
-                    .filter(|req| req.created_at < timeout_cutoff)
-                    .map(|req| req.request_id.clone())
-                    .collect();
-                
-                for request_id in to_remove {
-                    if let Some(pending) = requests.remove(&request_id) {
-                        let timeout_response = P2PResponse {
-                            request_id: pending.request_id.clone(),
-                            response_type: P2PResponseType::Error {
-                                message: "Request timeout".to_string(),
-                            },
-                        };
-                        let _ = pending.response_sender.send(timeout_response);
+                // Clean up expired pending requests
+                {
+                    let mut requests = pending_requests.write();
+                    let to_remove: Vec<String> = requests
+                        .values()
+                        .filter(|req| req.created_at < timeout_cutoff)
+                        .map(|req| req.request_id.clone())
+                        .collect();
+                    
+                    for request_id in to_remove {
+                        if let Some(pending) = requests.remove(&request_id) {
+                            let timeout_response = P2PResponse {
+                                request_id: pending.request_id.clone(),
+                                response_type: P2PResponseType::Error {
+                                    message: "Request timeout".to_string(),
+                                },
+                            };
+                            let _ = pending.response_sender.send(timeout_response);
+                        }
                     }
+                }
+                
+                // Clean up old request IDs from cache (prevents memory leak)
+                // Note: This is a simplified cleanup - in production we'd track timestamps per ID
+                {
+                    let mut recent_ids = recent_request_ids.write();
+                    if recent_ids.len() > 10000 { // Arbitrary limit to prevent unbounded growth
+                        recent_ids.clear();
+                        debug!("Cleared recent request IDs cache (size limit reached)");
+                    }
+                }
+                
+                // Reset rate limit counters for peers that haven't been active
+                {
+                    let mut peer_stats = peer_request_counts.write();
+                    peer_stats.retain(|_peer_id, stats| {
+                        // Keep stats for peers active within the last hour
+                        now.signed_duration_since(stats.last_reset).num_hours() < 1
+                    });
                 }
             }
         });
@@ -395,7 +504,7 @@ mod tests {
             response_type: messages::chunk_response([1; 32], 0, vec![1, 2, 3, 4]),
         };
 
-        manager.handle_response(response).unwrap();
+        manager.handle_response(response, "test_peer").unwrap();
 
         // Wait for the request to complete
         let result = request_task.await.unwrap().unwrap();
@@ -451,7 +560,7 @@ mod tests {
             response_type: messages::auth_response(auth_response.clone()),
         };
 
-        manager.handle_response(response).unwrap();
+        manager.handle_response(response, "auth_peer").unwrap();
 
         let result = request_task.await.unwrap().unwrap();
         match result.response_type {
@@ -509,7 +618,7 @@ mod tests {
             response_type: messages::file_update_ack(true, "File received".to_string()),
         };
 
-        manager.handle_response(response).unwrap();
+        manager.handle_response(response, "file_peer").unwrap();
 
         let result = request_task.await.unwrap().unwrap();
         match result.response_type {
@@ -569,7 +678,7 @@ mod tests {
             response_type: messages::error_response("Test error".to_string()),
         };
 
-        let result = manager.handle_response(response);
+        let result = manager.handle_response(response, "unknown_peer");
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Unknown request ID"));
     }

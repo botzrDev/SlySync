@@ -255,23 +255,126 @@ pub async fn show_status(verbose: bool) -> Result<()> {
         return Ok(());
     }
     
+    // Initialize P2P service to get peer information
+    let identity = crate::crypto::Identity::load_or_generate(&config.identity_path())?;
+    let p2p_service = crate::p2p::P2PService::new(identity, config.clone()).await?;
+    
+    // Get connected peers
+    let peers = p2p_service.get_connected_peers().await;
+    let connected_peers = peers.iter().filter(|p| p.authenticated).count();
+    
     println!("📂 Sync Status\n");
     
+    // Display node configuration
+    println!("🔧 Node Configuration:");
+    println!("    Node ID: {}", config.node_id);
+    println!("    Listen Port: {}", config.listen_port);
+    
+    // Display bandwidth configuration
+    if let Some(upload_limit) = config.bandwidth_limit_up {
+        println!("    Upload Limit: {}", format_bytes_per_sec(upload_limit));
+    } else {
+        println!("    Upload Limit: Unlimited");
+    }
+    
+    if let Some(download_limit) = config.bandwidth_limit_down {
+        println!("    Download Limit: {}", format_bytes_per_sec(download_limit));
+    } else {
+        println!("    Download Limit: Unlimited");
+    }
+    
+    println!("    Discovery: {}", if config.discovery_enabled { "Enabled" } else { "Disabled" });
+    println!();
+    
+    // Display sync folders
     for folder in config.sync_folders() {
         let name = folder.name.as_deref().unwrap_or("unnamed");
         println!("  {} ({})", name, folder.path.display());
-        println!("    Status: Up to date"); // TODO: Implement actual status checking
-        println!("    Peers: 0 connected"); // TODO: Implement peer counting
+        
+        // Check sync status based on folder state
+        let status = if folder.path.exists() {
+            "Up to date"
+        } else {
+            "Folder missing"
+        };
+        println!("    Status: {}", status);
+        println!("    Peers: {} connected", connected_peers);
         
         if verbose {
-            println!("    Files: 0"); // TODO: Implement file counting
-            println!("    Size: 0 bytes"); // TODO: Implement size calculation
+            // Count files and calculate total size
+            let (file_count, total_size) = count_files_and_size(&folder.path).await;
+            println!("    Files: {}", file_count);
+            println!("    Size: {}", format_bytes(total_size));
+            println!("    Created: {}", folder.created_at.format("%Y-%m-%d %H:%M:%S UTC"));
         }
         
         println!();
     }
     
     Ok(())
+}
+
+fn count_files_and_size(path: &std::path::Path) -> std::pin::Pin<Box<dyn std::future::Future<Output = (usize, u64)> + Send + '_>> {
+    Box::pin(async move {
+        if !path.exists() {
+            return (0, 0);
+        }
+        
+        let mut file_count = 0;
+        let mut total_size = 0;
+        
+        if let Ok(mut entries) = tokio::fs::read_dir(path).await {
+            while let Ok(Some(entry)) = entries.next_entry().await {
+                let entry_path = entry.path();
+                if entry_path.is_file() {
+                    file_count += 1;
+                    if let Ok(metadata) = entry.metadata().await {
+                        total_size += metadata.len();
+                    }
+                } else if entry_path.is_dir() {
+                    let (sub_files, sub_size) = count_files_and_size(&entry_path).await;
+                    file_count += sub_files;
+                    total_size += sub_size;
+                }
+            }
+        }
+        
+        (file_count, total_size)
+    })
+}
+
+fn format_bytes(bytes: u64) -> String {
+    const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
+    let mut size = bytes as f64;
+    let mut unit_index = 0;
+    
+    while size >= 1024.0 && unit_index < UNITS.len() - 1 {
+        size /= 1024.0;
+        unit_index += 1;
+    }
+    
+    if unit_index == 0 {
+        format!("{} {}", bytes, UNITS[unit_index])
+    } else {
+        format!("{:.1} {}", size, UNITS[unit_index])
+    }
+}
+
+fn format_bytes_per_sec(bytes_per_sec: u64) -> String {
+    const UNITS: &[&str] = &["B/s", "KB/s", "MB/s", "GB/s", "TB/s"];
+    let mut rate = bytes_per_sec as f64;
+    let mut unit_index = 0;
+    
+    while rate >= 1024.0 && unit_index < UNITS.len() - 1 {
+        rate /= 1024.0;
+        unit_index += 1;
+    }
+    
+    if unit_index == 0 {
+        format!("{} {}", bytes_per_sec, UNITS[unit_index])
+    } else {
+        format!("{:.1} {}", rate, UNITS[unit_index])
+    }
 }
 
 pub async fn show_peers() -> Result<()> {

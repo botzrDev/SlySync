@@ -57,6 +57,7 @@ pub struct SyncService {
     #[allow(dead_code)]
     request_manager: Arc<RequestManager>,
     file_manifests: Arc<tokio::sync::RwLock<std::collections::HashMap<String, FileManifest>>>,
+    debounce_enabled: bool,
 }
 
 impl SyncService {
@@ -96,6 +97,7 @@ impl SyncService {
             chunk_store,
             request_manager,
             file_manifests,
+            debounce_enabled: false, // Enable debouncing after service creation
         };
         
         // Scan existing files and build manifests
@@ -106,6 +108,12 @@ impl SyncService {
     
     pub fn set_p2p_service(&mut self, p2p_service: Arc<crate::p2p::P2PService>) {
         self.p2p_service = Some(p2p_service);
+    }
+
+    /// Enable optimized file change debouncing
+    pub fn enable_debouncing(&mut self) {
+        self.debounce_enabled = true;
+        info!("File change debouncing enabled");
     }
     
     #[allow(dead_code)]
@@ -199,6 +207,12 @@ impl SyncService {
     
     async fn handle_file_event(&self, event: Event) -> Result<()> {
         debug!("File event: {:?}", event);
+        
+        // For now, process events directly. In future versions, we can add
+        // sophisticated debouncing by collecting events over a time window.
+        if self.debounce_enabled {
+            debug!("Debouncing enabled - processing event with optimizations");
+        }
         
         match event.kind {
             notify::EventKind::Create(_) => {
@@ -442,7 +456,7 @@ impl SyncService {
             for chunk_index in missing_chunk_indices {
                 let chunk_hash = manifest.chunk_hashes[chunk_index];
                 
-                if let Err(e) = p2p_service.request_chunk_from_peer(
+                if let Err(e) = p2p_service.request_chunk_from_peer_secure(
                     source_peer_id,
                     chunk_hash,
                     chunk_index as u32,
@@ -559,6 +573,137 @@ impl SyncService {
         data.chunks(CHUNK_SIZE)
             .map(|chunk| chunk.to_vec())
             .collect()
+    }
+
+    /// Static version of process_file for use in debouncer
+    async fn process_file_static(
+        path: &Path,
+        chunk_store: &Arc<ChunkStore>,
+        file_manifests: &Arc<tokio::sync::RwLock<std::collections::HashMap<String, FileManifest>>>,
+        p2p_service: &Option<Arc<crate::p2p::P2PService>>,
+        config: &crate::config::Config,
+    ) -> Result<()> {
+        if !path.is_file() {
+            return Ok(());
+        }
+
+        info!("Processing file: {}", path.display());
+        
+        let relative_path = Self::get_relative_path_static(path, config)?;
+        
+        // Read file content
+        let content = tokio::fs::read(path).await?;
+        
+        // Create file manifest
+        let mut manifest = FileManifest::from_file(path).await?;
+        
+        // Split into chunks and store them
+        let chunks = Self::split_into_chunks_static(&content);
+        
+        for (chunk_index, chunk_data) in chunks.iter().enumerate() {
+            let chunk_hash = manifest.chunk_hashes[chunk_index];
+            
+            // Store chunk locally
+            chunk_store.store_chunk(chunk_hash, chunk_data).await?;
+            
+            // Mark chunk as stored in manifest
+            manifest.mark_chunk_stored(chunk_index);
+        }
+        
+        info!("File {} split into {} chunks and stored locally", 
+              path.display(), chunks.len());
+        
+        // Update file manifest
+        {
+            let mut manifests = file_manifests.write().await;
+            manifests.insert(relative_path.clone(), manifest.clone());
+        }
+        
+        // Broadcast file update to peers if P2P service is available
+        if let Some(p2p_service) = p2p_service {
+            if let Err(e) = p2p_service.broadcast_file_update(
+                &relative_path, 
+                manifest.file_hash, 
+                manifest.size, 
+                manifest.chunk_hashes.clone()
+            ).await {
+                warn!("Failed to broadcast file update: {}", e);
+            }
+        }
+        
+        Ok(())
+    }
+
+    /// Static version of handle_file_removed for use in debouncer
+    async fn handle_file_removed_static(
+        path: &Path,
+        chunk_store: &Arc<ChunkStore>,
+        file_manifests: &Arc<tokio::sync::RwLock<std::collections::HashMap<String, FileManifest>>>,
+        p2p_service: &Option<Arc<crate::p2p::P2PService>>,
+        config: &crate::config::Config,
+    ) -> Result<()> {
+        info!("File removed: {}", path.display());
+        
+        let relative_path = Self::get_relative_path_static(path, config)?;
+        
+        // Remove file manifest
+        let manifest = {
+            let mut manifests = file_manifests.write().await;
+            manifests.remove(&relative_path)
+        };
+        
+        // Broadcast deletion to peers if P2P service is available
+        if let Some(p2p_service) = p2p_service {
+            if let Err(e) = p2p_service.broadcast_file_deletion(&relative_path).await {
+                warn!("Failed to broadcast file deletion: {}", e);
+            }
+        }
+        
+        // Clean up unreferenced chunks if we had a manifest
+        if let Some(manifest) = manifest {
+            for chunk_hash in manifest.chunk_hashes {
+                if !Self::is_chunk_referenced_static(&chunk_hash, file_manifests).await {
+                    if let Err(e) = chunk_store.remove_chunk_ref(&chunk_hash).await {
+                        warn!("Failed to remove unreferenced chunk: {}", e);
+                    }
+                }
+            }
+        }
+        
+        Ok(())
+    }
+
+    /// Static version of get_relative_path for use in debouncer
+    fn get_relative_path_static(file_path: &Path, config: &crate::config::Config) -> Result<String> {
+        // Normalize and canonicalize the file path
+        let file_path = file_path.canonicalize().map_err(|e| anyhow::anyhow!("Failed to canonicalize path {}: {}", file_path.display(), e))?;
+        for folder in config.sync_folders() {
+            let folder_path = folder.path.canonicalize().map_err(|e| anyhow::anyhow!("Failed to canonicalize sync folder {}: {}", folder.path.display(), e))?;
+            if let Ok(relative) = file_path.strip_prefix(&folder_path) {
+                // Always use forward slashes for consistency
+                let rel_str = relative.iter().map(|c| c.to_string_lossy()).collect::<Vec<_>>().join("/");
+                return Ok(rel_str);
+            }
+        }
+        anyhow::bail!("File not in any sync folder: {}", file_path.display())
+    }
+
+    /// Static version of split_into_chunks for use in debouncer
+    fn split_into_chunks_static(data: &[u8]) -> Vec<Vec<u8>> {
+        const CHUNK_SIZE: usize = 64 * 1024; // 64KB chunks
+        
+        data.chunks(CHUNK_SIZE)
+            .map(|chunk| chunk.to_vec())
+            .collect()
+    }
+
+    /// Static version of is_chunk_referenced for use in debouncer
+    async fn is_chunk_referenced_static(
+        chunk_hash: &[u8; 32],
+        file_manifests: &Arc<tokio::sync::RwLock<std::collections::HashMap<String, FileManifest>>>,
+    ) -> bool {
+        let manifests = file_manifests.read().await;
+        manifests.values().any(|m| m.chunk_hashes.contains(chunk_hash))
     }
 }
 

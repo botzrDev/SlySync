@@ -8,9 +8,11 @@ use anyhow::Result;
 use clap::Parser;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
+mod bandwidth;
 mod cli;
 mod config;
 mod crypto;
+mod debounce;
 mod mirror;
 mod p2p;
 mod requests;

@@ -25,9 +25,11 @@
 //! - [`requests`] - Request/response management for P2P operations
 //! - [`mirror`] - Local folder mirroring without P2P networking
 
+pub mod bandwidth;
 pub mod cli;
 pub mod config;
 pub mod crypto;
+pub mod debounce;
 pub mod mirror;
 pub mod p2p;
 pub mod requests;
