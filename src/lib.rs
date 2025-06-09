@@ -23,10 +23,12 @@
 //! - [`storage`] - Chunk-based file storage system
 //! - [`sync`] - File synchronization engine
 //! - [`requests`] - Request/response management for P2P operations
+//! - [`mirror`] - Local folder mirroring without P2P networking
 
 pub mod cli;
 pub mod config;
 pub mod crypto;
+pub mod mirror;
 pub mod p2p;
 pub mod requests;
 pub mod storage;

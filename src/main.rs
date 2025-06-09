@@ -11,6 +11,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 mod cli;
 mod config;
 mod crypto;
+mod mirror;
 mod p2p;
 mod requests;
 mod storage;
@@ -44,5 +45,8 @@ async fn main() -> Result<()> {
         Commands::Status { verbose } => cli::show_status(verbose).await,
         Commands::Peers => cli::show_peers().await,
         Commands::Daemon => cli::run_daemon().await,
+        Commands::Mirror { source, destination, name, daemon } => {
+            cli::setup_mirror(source, destination, name, daemon).await
+        },
     }
 }

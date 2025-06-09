@@ -76,6 +76,20 @@ pub enum Commands {
     
     /// Run the SlySync engine as a background daemon
     Daemon,
+    
+    /// Mirror a local folder to another local folder
+    Mirror {
+        /// Source folder path to mirror from
+        source: PathBuf,
+        /// Destination folder path to mirror to
+        destination: PathBuf,
+        /// Optional name for this mirror setup
+        #[arg(short, long)]
+        name: Option<String>,
+        /// Run as a daemon (continuous monitoring)
+        #[arg(short, long)]
+        daemon: bool,
+    },
 }
 
 /// Initialize SlySync configuration and generate node identity.
@@ -342,6 +356,74 @@ pub async fn run_daemon() -> Result<()> {
     
     println!("\n🛑 SlySync daemon stopping...");
     sync_handle.abort();
+    
+    Ok(())
+}
+
+/// Set up a local folder mirror
+/// 
+/// This command creates a mirror relationship between two local folders,
+/// allowing for real-time synchronization without P2P networking.
+/// 
+/// # Arguments
+/// 
+/// * `source` - The source folder to mirror from
+/// * `destination` - The destination folder to mirror to
+/// * `name` - Optional human-readable name for this mirror
+/// * `daemon` - Whether to run as a daemon (continuous monitoring)
+/// 
+/// # Errors
+/// 
+/// Returns an error if paths are invalid, inaccessible, or if mirror setup fails.
+pub async fn setup_mirror(
+    source: PathBuf,
+    destination: PathBuf,
+    name: Option<String>,
+    daemon: bool,
+) -> Result<()> {
+    tracing::info!("Setting up mirror from {} to {}", source.display(), destination.display());
+    
+    if daemon {
+        // Run as daemon with continuous monitoring
+        println!("🔄 Starting mirror daemon...");
+        if let Some(ref name) = name {
+            println!("Mirror: {}", name);
+        }
+        println!("Source: {}", source.display());
+        println!("Destination: {}", destination.display());
+        println!("💚 Mirror daemon is running. Press Ctrl+C to stop.");
+        
+        let mirror_service = crate::mirror::MirrorService::new(source, destination, name).await?;
+        
+        // Handle shutdown signal
+        let shutdown_handle = tokio::spawn(async {
+            tokio::signal::ctrl_c().await.unwrap();
+            println!("\n🛑 Mirror daemon stopping...");
+        });
+        
+        // Run mirror service with graceful shutdown
+        tokio::select! {
+            result = mirror_service.run() => {
+                if let Err(e) = result {
+                    error!("Mirror service error: {}", e);
+                    return Err(e);
+                }
+            }
+            _ = shutdown_handle => {
+                println!("Mirror daemon stopped.");
+            }
+        }
+    } else {
+        // Run once and exit
+        println!("🔄 Running one-time mirror operation...");
+        if let Some(ref name) = name {
+            println!("Mirror: {}", name);
+        }
+        println!("Source: {}", source.display());
+        println!("Destination: {}", destination.display());
+        
+        crate::mirror::run_mirror_once(source, destination, name).await?;
+    }
     
     Ok(())
 }
@@ -658,6 +740,32 @@ mod tests {
         let args = vec!["slysync", "daemon"];
         let cli = Cli::try_parse_from(args).unwrap();
         assert!(matches!(cli.command, Commands::Daemon));
+        
+        // Test mirror command
+        let args = vec!["slysync", "mirror", "/source/path", "/dest/path"];
+        let cli = Cli::try_parse_from(args).unwrap();
+        match cli.command {
+            Commands::Mirror { source, destination, name, daemon } => {
+                assert_eq!(source, PathBuf::from("/source/path"));
+                assert_eq!(destination, PathBuf::from("/dest/path"));
+                assert_eq!(name, None);
+                assert!(!daemon);
+            }
+            _ => panic!("Wrong command parsed"),
+        }
+        
+        // Test mirror command with all options
+        let args = vec!["slysync", "mirror", "/source/path", "/dest/path", "--name", "My Mirror", "--daemon"];
+        let cli = Cli::try_parse_from(args).unwrap();
+        match cli.command {
+            Commands::Mirror { source, destination, name, daemon } => {
+                assert_eq!(source, PathBuf::from("/source/path"));
+                assert_eq!(destination, PathBuf::from("/dest/path"));
+                assert_eq!(name, Some("My Mirror".to_string()));
+                assert!(daemon);
+            }
+            _ => panic!("Wrong command parsed"),
+        }
     }
 
     #[test]
