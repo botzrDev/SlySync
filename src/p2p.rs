@@ -712,26 +712,50 @@ impl P2PService {
 } // End of impl P2PService
 
 // Generate a self-signed certificate for QUIC connections
-fn generate_self_signed_cert(_identity: &crate::crypto::Identity) -> anyhow::Result<(Vec<u8>, Vec<u8>)> {
-    // For now, return dummy certificate data
-    // In a production system, this would generate a proper self-signed certificate
-    warn!("Using dummy certificate - not suitable for production");
+fn generate_self_signed_cert(identity: &crate::crypto::Identity) -> anyhow::Result<(Vec<u8>, Vec<u8>)> {
+    // Generate key pair with ECDSA P-256 algorithm (more compatible than Ed25519 for QUIC)
+    let key_pair = rcgen::KeyPair::generate()?;
     
-    // Return dummy certificate and key data
-    let cert_data = b"dummy-cert-data".to_vec();
-    let key_data = b"dummy-key-data".to_vec();
+    // Create certificate parameters
+    let mut params = rcgen::CertificateParams::default();
     
-    Ok((cert_data, key_data))
+    // Set validity period (1 year) - note: month is 1-indexed, day is 1-indexed
+    params.not_before = rcgen::date_time_ymd(2025, 1, 1);
+    params.not_after = rcgen::date_time_ymd(2026, 1, 1);
+    
+    // Include peer identity in certificate subject alternative names
+    let peer_id = hex::encode(identity.public_key().to_bytes());
+    let dns_name = format!("{}.slysync.local", peer_id);
+    
+    // Create DNS name using proper Ia5String conversion
+    params.subject_alt_names = vec![
+        rcgen::SanType::DnsName(dns_name.try_into()?)
+    ];
+    
+    // Set certificate subject
+    let mut distinguished_name = rcgen::DistinguishedName::new();
+    distinguished_name.push(rcgen::DnType::CommonName, format!("SlySync-{}", &peer_id[..8]));
+    params.distinguished_name = distinguished_name;
+    
+    // Generate certificate with the key pair
+    let cert = params.self_signed(&key_pair)?;
+    
+    // Get certificate and private key in DER format
+    let cert_der = cert.der().to_vec();
+    let key_der = key_pair.serialize_der();
+    
+    Ok((cert_der, key_der))
 }
 // Configure QUIC server
-fn configure_server(_cert: Vec<u8>, _key: Vec<u8>) -> anyhow::Result<quinn::ServerConfig> {
-    // For now, return a basic server configuration
-    // In production, this would use the provided certificate and key
-    warn!("Using basic server configuration - not suitable for production");
+fn configure_server(cert_der: Vec<u8>, key_der: Vec<u8>) -> anyhow::Result<quinn::ServerConfig> {
+    // Create rustls certificate and private key from DER data
+    let cert = rustls::Certificate(cert_der);
+    let key = rustls::PrivateKey(key_der);
     
+    // Configure server with proper TLS settings
     let server_config = quinn::ServerConfig::with_single_cert(
-        vec![rustls::Certificate(b"dummy-cert".to_vec())],
-        rustls::PrivateKey(b"dummy-key".to_vec()),
+        vec![cert],
+        key,
     ).map_err(|e| anyhow!("Failed to configure server: {}", e))?;
     
     Ok(server_config)
