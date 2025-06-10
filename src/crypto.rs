@@ -102,8 +102,9 @@ impl Identity {
         self.signing_key.verifying_key()
     }
     
+    #[allow(dead_code)]
     pub fn public_key_bytes(&self) -> [u8; 32] {
-        self.signing_key.verifying_key().to_bytes()
+        self.public_key().to_bytes()
     }
     
     #[allow(dead_code)]

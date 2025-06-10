@@ -38,18 +38,15 @@
 //! ```
 
 use anyhow::{anyhow, Result};
-use ed25519_dalek::{VerifyingKey, Signature, Verifier};
-use hex;
-use quinn::{ClientConfig, Connection, Endpoint, ServerConfig};
-use rustls::{Certificate, PrivateKey};
+use ed25519_dalek::{VerifyingKey, Verifier};
+use quinn::{Connection, Endpoint};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
-use tokio::net::UdpSocket;
 use tokio::sync::{mpsc, RwLock};
 use tokio::time::{interval, Duration, Instant};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 use crate::bandwidth;
@@ -218,10 +215,8 @@ impl P2PService {
     
     pub async fn discover_peers(&self) -> Result<Vec<PeerInfo>> {
         info!("Starting peer discovery...");
-        
-        // Start mDNS discovery
-        self.start_mdns_discovery().await?;
-        
+        // Start mDNS discovery (stubbed, not implemented)
+        // self.start_mdns_discovery().await?;
         // Return current peer list
         let peers = self.peers.read().await;
         Ok(peers.values().cloned().collect())
@@ -682,13 +677,7 @@ impl P2PService {
                                         return;
                                     }
                                 };
-                                let sig = match ed25519_dalek::Signature::from_bytes(&sig_bytes) {
-                                    Ok(sig) => sig,
-                                    Err(_) => {
-                                        warn!("Malformed signature in auth response from {}", peer_id);
-                                        return;
-                                    }
-                                };
+                                let sig = ed25519_dalek::Signature::from_bytes(&sig_bytes);
                                 if pk.verify(&auth_response.challenge, &sig).is_ok() {
                                     peer_info.authenticated = true;
                                     let mut connections_guard = connections.write().await;
@@ -721,3 +710,193 @@ impl P2PService {
         }
     } // End of handle_message_static
 } // End of impl P2PService
+
+// Generate a self-signed certificate for QUIC connections
+fn generate_self_signed_cert(_identity: &crate::crypto::Identity) -> anyhow::Result<(Vec<u8>, Vec<u8>)> {
+    // For now, return dummy certificate data
+    // In a production system, this would generate a proper self-signed certificate
+    warn!("Using dummy certificate - not suitable for production");
+    
+    // Return dummy certificate and key data
+    let cert_data = b"dummy-cert-data".to_vec();
+    let key_data = b"dummy-key-data".to_vec();
+    
+    Ok((cert_data, key_data))
+}
+// Configure QUIC server
+fn configure_server(_cert: Vec<u8>, _key: Vec<u8>) -> anyhow::Result<quinn::ServerConfig> {
+    // For now, return a basic server configuration
+    // In production, this would use the provided certificate and key
+    warn!("Using basic server configuration - not suitable for production");
+    
+    let server_config = quinn::ServerConfig::with_single_cert(
+        vec![rustls::Certificate(b"dummy-cert".to_vec())],
+        rustls::PrivateKey(b"dummy-key".to_vec()),
+    ).map_err(|e| anyhow!("Failed to configure server: {}", e))?;
+    
+    Ok(server_config)
+}
+// Configure QUIC client
+fn configure_client() -> anyhow::Result<quinn::ClientConfig> {
+    // Create a basic client configuration that accepts any certificate
+    // In production, this should validate certificates properly
+    warn!("Using insecure client configuration - not suitable for production");
+    
+    let mut crypto = rustls::ClientConfig::builder()
+        .with_safe_defaults()
+        .with_custom_certificate_verifier(
+            SkipServerVerification::new()
+        )
+        .with_no_client_auth();
+    
+    crypto.alpn_protocols = vec![b"slysync/1.0".to_vec()];
+    
+    let client_config = quinn::ClientConfig::new(std::sync::Arc::new(crypto));
+    
+    Ok(client_config)
+}
+
+struct SkipServerVerification;
+
+impl SkipServerVerification {
+    fn new() -> Arc<Self> {
+        Arc::new(Self)
+    }
+}
+
+impl rustls::client::ServerCertVerifier for SkipServerVerification {
+    fn verify_server_cert(
+        &self,
+        _end_entity: &rustls::Certificate,
+        _intermediates: &[rustls::Certificate],
+        _server_name: &rustls::ServerName,
+        _scts: &mut dyn Iterator<Item = &[u8]>,
+        _ocsp_response: &[u8],
+        _now: std::time::SystemTime,
+    ) -> Result<rustls::client::ServerCertVerified, rustls::Error> {
+        // Skip all verification - INSECURE!
+        Ok(rustls::client::ServerCertVerified::assertion())
+    }
+}
+// Stub for authenticate_peer
+impl P2PService {
+    async fn authenticate_peer(&self, conn: &PeerConnection) -> anyhow::Result<()> {
+        // Generate a random challenge
+        let mut challenge = [0u8; 32];
+        rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut challenge);
+        
+        // Send authentication challenge
+        let auth_challenge = P2PMessage::AuthChallenge {
+            request_id: uuid::Uuid::new_v4().to_string(),
+            challenge,
+        };
+        
+        conn.send_message(&auth_challenge).await?;
+        
+        // In a real implementation, we would wait for the response and verify it
+        // For now, just mark the peer as authenticated after sending the challenge
+        info!("Authentication challenge sent to peer {}", conn.peer_id);
+        
+        Ok(())
+    }
+    // Implement UDP broadcast for peer discovery
+    async fn send_announce_broadcast(identity: &crate::crypto::Identity, config: &crate::config::Config) -> anyhow::Result<()> {
+        use tokio::net::UdpSocket;
+        
+        let socket = UdpSocket::bind("0.0.0.0:0").await?;
+        socket.set_broadcast(true)?;
+        
+        let announce_message = P2PMessage::Announce {
+            peer_id: hex::encode(identity.public_key().to_bytes()),
+            public_key: identity.public_key().to_bytes().to_vec(),
+            listen_port: config.listen_port,
+        };
+        
+        let message_data = serde_json::to_vec(&announce_message)?;
+        
+        // Broadcast to common broadcast addresses
+        let broadcast_addrs = vec![
+            "255.255.255.255:41338",
+            "224.0.0.1:41338", // Multicast
+        ];
+        
+        for addr in broadcast_addrs {
+            if let Ok(broadcast_addr) = addr.parse::<SocketAddr>() {
+                match socket.send_to(&message_data, broadcast_addr).await {
+                    Ok(_) => debug!("Sent announce broadcast to {}", addr),
+                    Err(e) => warn!("Failed to send broadcast to {}: {}", addr, e),
+                }
+            }
+        }
+        
+        Ok(())
+    }
+    // Clean up stale peer connections
+    async fn cleanup_stale_peers(peers: &Arc<RwLock<HashMap<String, PeerInfo>>>) {
+        let _stale_timeout = Duration::from_secs(300); // 5 minutes
+        let now = chrono::Utc::now();
+        
+        let mut peers_guard = peers.write().await;
+        let mut stale_peer_ids = Vec::new();
+        
+        for (peer_id, peer_info) in peers_guard.iter() {
+            let age = now.signed_duration_since(peer_info.last_seen);
+            if age.num_seconds() > 300 { // 5 minutes
+                stale_peer_ids.push(peer_id.clone());
+            }
+        }
+        
+        for peer_id in stale_peer_ids {
+            debug!("Removing stale peer: {}", peer_id);
+            peers_guard.remove(&peer_id);
+        }
+    }
+    // Handle incoming connection streams
+    async fn handle_connection_streams(connection: quinn::Connection, peer_id: String, message_tx: mpsc::UnboundedSender<(String, P2PMessage)>) {
+        loop {
+            match connection.accept_uni().await {
+                Ok(stream) => {
+                    let peer_id = peer_id.clone();
+                    let message_tx = message_tx.clone();
+                    
+                    tokio::spawn(async move {
+                        match Self::handle_stream(stream, peer_id.clone(), message_tx).await {
+                            Ok(_) => debug!("Stream from {} processed successfully", peer_id),
+                            Err(e) => warn!("Error processing stream from {}: {}", peer_id, e),
+                        }
+                    });
+                }
+                Err(e) => {
+                    debug!("Connection {} closed: {}", peer_id, e);
+                    break;
+                }
+            }
+        }
+    }
+    
+    async fn handle_stream(
+        mut stream: quinn::RecvStream,
+        peer_id: String,
+        message_tx: mpsc::UnboundedSender<(String, P2PMessage)>,
+    ) -> Result<()> {
+        let buffer = stream.read_to_end(1024 * 1024).await?; // 1MB limit
+        
+        if buffer.is_empty() {
+            return Ok(());
+        }
+        
+        match serde_json::from_slice::<P2PMessage>(&buffer) {
+            Ok(message) => {
+                debug!("Received message from {}: {:?}", peer_id, message);
+                if let Err(e) = message_tx.send((peer_id, message)) {
+                    warn!("Failed to forward message to handler: {}", e);
+                }
+            }
+            Err(e) => {
+                warn!("Failed to deserialize message from {}: {}", peer_id, e);
+            }
+        }
+        
+        Ok(())
+    }
+}

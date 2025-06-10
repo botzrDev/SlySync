@@ -150,6 +150,11 @@ impl Config {
     }
 
     fn config_dir() -> Result<PathBuf> {
+        // Check for environment variable override first
+        if let Ok(env_config_dir) = std::env::var("SLYSYNC_CONFIG_DIR") {
+            return Ok(PathBuf::from(env_config_dir));
+        }
+        
         let config_dir = dirs::config_dir()
             .ok_or_else(|| anyhow::anyhow!("Could not determine config directory"))?
             .join("synccore");
