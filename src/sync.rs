@@ -25,11 +25,11 @@
 //! ## Usage Example
 //! 
 //! ```rust,no_run
-//! use synccore::sync::SyncService;
-//! use synccore::config::Config;
+//! use slysync::sync::SyncService;
+//! use slysync::config::Config;
 //! 
 //! async fn start_sync() -> anyhow::Result<()> {
-//!     let config = Config::new("config.toml").await?;
+//!     let config = Config::init().await?;
 //!     let mut sync_service = SyncService::new(config).await?;
 //!     
 //!     // Run the sync service

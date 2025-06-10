@@ -15,13 +15,13 @@
 //! ## Usage Example
 //! 
 //! ```rust,no_run
-//! use synccore::bandwidth::BandwidthManager;
+//! use slysync::bandwidth::BandwidthManager;
 //! 
 //! async fn transfer_with_throttling() -> anyhow::Result<()> {
-//!     let mut manager = BandwidthManager::new(1_048_576, 2_097_152); // 1MB up, 2MB down
+//!     let mut manager = BandwidthManager::new(Some(1_048_576), Some(2_097_152)); // 1MB up, 2MB down
 //!     
 //!     // Request permission to send 1KB
-//!     manager.request_upload_quota(1024).await;
+//!     manager.request_upload_quota(1024).await?;
 //!     
 //!     // Transfer data here...
 //!     

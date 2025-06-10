@@ -15,20 +15,22 @@
 //! ## Usage Example
 //! 
 //! ```rust,no_run
-//! use synccore::debounce::FileChangeDebouncer;
-//! use std::time::Duration;
+//! use slysync::debounce::FileChangeDebouncer;
+//! use std::path::PathBuf;
 //! 
 //! async fn setup_optimized_monitoring() -> anyhow::Result<()> {
 //!     let debouncer = FileChangeDebouncer::new(
-//!         Duration::from_millis(100), // debounce delay
-//!         |events| async move {
-//!             println!("Processing {} debounced events", events.len());
-//!             Ok(())
+//!         |events| {
+//!             Box::pin(async move {
+//!                 println!("Processing {} debounced events", events.len());
+//!                 Ok(())
+//!             })
 //!         }
 //!     );
 //!     
 //!     // Handle file events through debouncer
-//!     debouncer.handle_event(path, event_type).await?;
+//!     let path = PathBuf::from("/some/file.txt");
+//!     debouncer.handle_event(&path, slysync::debounce::FileChangeType::Modified).await?;
 //!     
 //!     Ok(())
 //! }

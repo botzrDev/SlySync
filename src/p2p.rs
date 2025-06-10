@@ -15,13 +15,13 @@
 //! ## Usage Example
 //! 
 //! ```rust,no_run
-//! use synccore::p2p::P2PService;
-//! use synccore::crypto::Identity;
-//! use synccore::config::Config;
+//! use slysync::p2p::P2PService;
+//! use slysync::crypto::Identity;
+//! use slysync::config::Config;
 //! 
 //! async fn start_p2p_service() -> anyhow::Result<()> {
-//!     let identity = Identity::generate().await?;
-//!     let config = Config::new("config.toml").await?;
+//!     let identity = Identity::generate()?;
+//!     let config = Config::init().await?;
 //!     
 //!     let p2p_service = P2PService::new(identity, config).await?;
 //!     

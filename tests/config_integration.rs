@@ -5,13 +5,18 @@
 
 use tempfile::TempDir;
 use tokio::fs;
+use std::sync::Mutex;
+
+// Use a mutex to prevent tests from interfering with each other's environment variables
+static TEST_MUTEX: Mutex<()> = Mutex::new(());
 
 #[tokio::test]
 async fn test_config_creation_and_loading() {
-    let _temp_dir = TempDir::new().unwrap();
+    let _guard = TEST_MUTEX.lock().unwrap();
+    let temp_dir = TempDir::new().unwrap();
     
     // Set config dir for this test
-    std::env::set_var("SLYSYNC_CONFIG_DIR", _temp_dir.path());
+    std::env::set_var("SLYSYNC_CONFIG_DIR", temp_dir.path());
 
     // Create new config
     let config = slysync::config::Config::init().await.unwrap();
@@ -26,7 +31,12 @@ async fn test_config_creation_and_loading() {
 
 #[tokio::test]
 async fn test_config_folder_management() {
+    let _guard = TEST_MUTEX.lock().unwrap();
     let temp_dir = TempDir::new().unwrap();
+    
+    // Set config dir for this test
+    std::env::set_var("SLYSYNC_CONFIG_DIR", temp_dir.path());
+    
     let mut config = slysync::config::Config::init().await.unwrap();
     
     // Create test directories
@@ -45,39 +55,75 @@ async fn test_config_folder_management() {
     config.add_sync_folder(folder2.clone(), None).unwrap();
     assert_eq!(config.sync_folders().len(), 2);
     
-    // Save and reload
+    // Save config
     config.save().await.unwrap();
-    // Use load() if load_from is not available
+    
+    // Reload and verify
     let reloaded = slysync::config::Config::load().await.unwrap();
     assert_eq!(reloaded.sync_folders().len(), 2);
+    
+    // Clean up
+    std::env::remove_var("SLYSYNC_CONFIG_DIR");
 }
 
 #[tokio::test]
 async fn test_config_data_directory() {
+    let _guard = TEST_MUTEX.lock().unwrap();
+    let temp_dir = TempDir::new().unwrap();
+    
+    // Set config dir for this test
+    std::env::set_var("SLYSYNC_CONFIG_DIR", temp_dir.path());
+    
     let config = slysync::config::Config::init().await.unwrap();
     let data_dir = config.data_dir().unwrap();
     assert!(data_dir.exists());
     assert!(data_dir.is_dir());
+    
+    // Clean up
+    std::env::remove_var("SLYSYNC_CONFIG_DIR");
 }
 
 #[tokio::test]
 async fn test_config_identity_path() {
+    let _guard = TEST_MUTEX.lock().unwrap();
+    let temp_dir = TempDir::new().unwrap();
+    
+    // Set config dir for this test
+    std::env::set_var("SLYSYNC_CONFIG_DIR", temp_dir.path());
+    
     let config = slysync::config::Config::init().await.unwrap();
     let identity_path = config.identity_path();
     assert!(identity_path.to_string_lossy().contains("identity"));
+    
+    // Clean up
+    std::env::remove_var("SLYSYNC_CONFIG_DIR");
 }
 
 #[tokio::test]
 async fn test_config_default_values() {
+    let _guard = TEST_MUTEX.lock().unwrap();
+    let temp_dir = TempDir::new().unwrap();
+    
+    // Set config dir for this test
+    std::env::set_var("SLYSYNC_CONFIG_DIR", temp_dir.path());
+    
     let config = slysync::config::Config::init().await.unwrap();
     // Check default values
     assert!(config.listen_port > 0);
     assert!(config.sync_folders().is_empty());
+    
+    // Clean up
+    std::env::remove_var("SLYSYNC_CONFIG_DIR");
 }
 
 #[tokio::test]
 async fn test_config_serialization() {
+    let _guard = TEST_MUTEX.lock().unwrap();
     let temp_dir = TempDir::new().unwrap();
+    
+    // Set config dir for this test
+    std::env::set_var("SLYSYNC_CONFIG_DIR", temp_dir.path());
+    
     let mut config = slysync::config::Config::init().await.unwrap();
     
     // Add some data
@@ -87,7 +133,8 @@ async fn test_config_serialization() {
     
     // Save and check file content
     config.save().await.unwrap();
-    let content = fs::read_to_string(&temp_dir.path().join("slysync_config.toml")).await.unwrap();
+    let config_file_path = temp_dir.path().join("config.toml");
+    let content = fs::read_to_string(&config_file_path).await.unwrap();
     
     // Should be valid TOML
     assert!(content.contains("listen_port"));
@@ -95,11 +142,18 @@ async fn test_config_serialization() {
     
     // Should be parseable back
     let _parsed: toml::Value = toml::from_str(&content).unwrap();
+    
+    // Clean up
+    std::env::remove_var("SLYSYNC_CONFIG_DIR");
 }
 
 #[tokio::test]
 async fn test_config_concurrent_access() {
-    let _temp_dir = TempDir::new().unwrap();
+    let _guard = TEST_MUTEX.lock().unwrap();
+    let temp_dir = TempDir::new().unwrap();
+    
+    // Set config dir for this test
+    std::env::set_var("SLYSYNC_CONFIG_DIR", temp_dir.path());
     
     // Create initial config
     let _config1 = slysync::config::Config::init().await.unwrap();
@@ -107,4 +161,7 @@ async fn test_config_concurrent_access() {
     let _config2 = slysync::config::Config::load().await.unwrap();
     
     // Both should work without conflicts
+    
+    // Clean up
+    std::env::remove_var("SLYSYNC_CONFIG_DIR");
 }

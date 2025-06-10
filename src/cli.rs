@@ -19,10 +19,10 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 use tracing::{info, warn, error};
 
-/// Command-line interface structure for SlySync.
+/// SlySync - A next-generation, peer-to-peer file synchronization CLI utility.
 /// 
-/// This structure defines the main CLI parser and available subcommands
-/// using the clap derive macros for automatic argument parsing.
+/// SlySync provides secure, decentralized file synchronization without relying 
+/// on central servers, using modern cryptographic protocols and efficient networking.
 #[derive(Parser)]
 #[command(name = "slysync")]
 #[command(about = "A next-generation, peer-to-peer file synchronization CLI utility")]

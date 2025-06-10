@@ -25,7 +25,7 @@
 //! ## Usage Example
 //! 
 //! ```rust,no_run
-//! use synccore::requests::{RequestManager, messages};
+//! use slysync::requests::{RequestManager, messages};
 //! use std::time::Duration;
 //! 
 //! async fn send_chunk_request() -> anyhow::Result<()> {

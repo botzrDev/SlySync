@@ -146,7 +146,9 @@ impl Config {
             return Ok(test_dir.clone());
         }
         let config_dir = Self::config_dir()?;
-        Ok(config_dir.join("data"))
+        let data_dir = config_dir.join("data");
+        std::fs::create_dir_all(&data_dir)?;
+        Ok(data_dir)
     }
 
     fn config_dir() -> Result<PathBuf> {
