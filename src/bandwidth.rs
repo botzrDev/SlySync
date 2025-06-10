@@ -45,6 +45,7 @@ pub struct TokenBucket {
     last_refill: Arc<RwLock<Instant>>,
 }
 
+#[allow(dead_code)]
 impl TokenBucket {
     pub fn new(rate_bytes_per_sec: u64) -> Self {
         let capacity = rate_bytes_per_sec.max(1024); // Minimum 1KB burst
@@ -142,6 +143,7 @@ pub struct BandwidthManager {
     rate_window: Arc<RwLock<Vec<(Instant, u64, bool)>>>, // (time, bytes, is_upload)
 }
 
+#[allow(dead_code)]
 impl BandwidthManager {
     /// Create new bandwidth manager with upload/download limits in bytes per second
     /// Set to 0 or None to disable throttling for that direction
@@ -289,7 +291,7 @@ impl BandwidthManager {
     }
 
     /// Start background statistics reporting task
-    pub fn start_stats_reporter(&self) -> tokio::task::JoinHandle<()> {
+    pub async fn start_stats_reporter(&self) -> tokio::task::JoinHandle<()> {
         let stats = self.stats.clone();
         
         tokio::spawn(async move {
@@ -359,7 +361,7 @@ mod tests {
     }
 
     #[test]
-    fn test_rate_limiting_configuration() {
+    async fn test_rate_limiting_configuration() {
         let mut manager = BandwidthManager::new(Some(1000), None);
         
         // Test initial configuration

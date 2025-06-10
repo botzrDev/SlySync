@@ -47,6 +47,7 @@ use tracing::{debug, info, warn};
 
 /// Types of file change events for debouncing
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[allow(dead_code)]
 pub enum FileChangeType {
     Created,
     Modified,
@@ -55,6 +56,7 @@ pub enum FileChangeType {
 
 /// A debounced file change event
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct DebouncedFileEvent {
     pub path: PathBuf,
     pub change_type: FileChangeType,
@@ -63,6 +65,7 @@ pub struct DebouncedFileEvent {
     pub event_count: u32,
 }
 
+#[allow(dead_code)]
 impl DebouncedFileEvent {
     fn new(path: PathBuf, change_type: FileChangeType) -> Self {
         let now = Instant::now();
@@ -88,6 +91,7 @@ impl DebouncedFileEvent {
 
 /// Statistics for file change processing
 #[derive(Debug, Clone, Default)]
+#[allow(dead_code)]
 pub struct DebounceStats {
     pub events_received: u64,
     pub events_processed: u64,
@@ -99,6 +103,7 @@ pub struct DebounceStats {
 
 /// Configuration for the file change debouncer
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct DebouncerConfig {
     /// How long to wait after the last event before processing
     pub debounce_delay: Duration,
@@ -122,6 +127,7 @@ impl Default for DebouncerConfig {
 }
 
 /// High-performance file change debouncer
+#[allow(dead_code)]
 pub struct FileChangeDebouncer<F>
 where
     F: Fn(Vec<DebouncedFileEvent>) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send>> + Send + Sync + 'static,
@@ -133,6 +139,7 @@ where
     shutdown_tx: Option<mpsc::UnboundedSender<()>>,
 }
 
+#[allow(dead_code)]
 impl<F> FileChangeDebouncer<F>
 where
     F: Fn(Vec<DebouncedFileEvent>) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send>> + Send + Sync + 'static,
@@ -396,7 +403,7 @@ mod tests {
             Box::pin(async move {
                 count.fetch_add(events.len(), Ordering::SeqCst);
                 Ok(())
-            })
+            }) as std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send>>
         };
 
         let mut debouncer = FileChangeDebouncer::with_config(
@@ -440,7 +447,7 @@ mod tests {
             Box::pin(async move {
                 count.fetch_add(events.len(), Ordering::SeqCst);
                 Ok(())
-            })
+            }) as std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send>>
         };
 
         let mut debouncer = FileChangeDebouncer::with_config(
@@ -477,7 +484,7 @@ mod tests {
             Box::pin(async move {
                 events_store.write().extend(events);
                 Ok(())
-            })
+            }) as std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send>>
         };
 
         let mut debouncer = FileChangeDebouncer::with_config(

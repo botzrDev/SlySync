@@ -77,19 +77,22 @@ pub struct RequestManager {
 struct PendingRequest {
     request_id: String,
     peer_id: String,
+    #[allow(dead_code)] // Add this
     request_type: RequestType,
     response_sender: oneshot::Sender<P2PResponse>,
     created_at: chrono::DateTime<chrono::Utc>,
-    expected_peer_id: String, // The peer we expect the response from
+    expected_peer_id: String,
 }
 
 #[derive(Debug, Clone)]
 struct PeerRequestStats {
     request_count: u32,
     last_reset: chrono::DateTime<chrono::Utc>,
+    #[allow(dead_code)] // Add this
     first_seen: chrono::DateTime<chrono::Utc>,
 }
 
+#[allow(dead_code)] // Add this
 const MAX_REQUESTS_PER_MINUTE: u32 = 60;
 const REQUEST_ID_CACHE_DURATION_MINUTES: i64 = 10;
 
@@ -136,6 +139,7 @@ pub enum P2PResponseType {
     Error { message: String },
 }
 
+#[allow(dead_code)] // Add this
 impl RequestManager {
     pub fn new() -> Self {
         let manager = Self {
