@@ -205,11 +205,12 @@ The SlySync CLI has successfully evolved into a **fully functional peer-to-peer 
 ## 🐛 Known Issues
 
 ### Current Bugs
-- [⚠️] **QUIC/TLS configuration uses dummy certificates**
-  - Symptom: Self-signed certificates are hardcoded dummy values
-  - Impact: Connections work but lack proper cryptographic security
-  - Files: `src/p2p.rs:713-775` - `generate_self_signed_cert()`, `configure_server()`, `configure_client()`
-  - Priority: High - affects security but not basic functionality
+- [✅] **QUIC/TLS certificate generation fixed**
+  - Status: ✅ **COMPLETED** - Proper self-signed certificate generation implemented
+  - Fixed: `generate_self_signed_cert()` now uses correct rcgen API with ECDSA P-256
+  - Fixed: Proper DNS name conversion and certificate subject handling
+  - Impact: QUIC connections now use cryptographically valid certificates
+  - Files: `src/p2p.rs:713-745` - Certificate generation working correctly
 
 - [⚠️] **Certificate verification disabled in QUIC client** 
   - Symptom: `SkipServerVerification` bypasses all certificate validation
@@ -250,16 +251,12 @@ The SlySync CLI has successfully evolved into a **fully functional peer-to-peer 
 
 ## 🎯 Next Steps (Recommended Order)
 
-1. **Fix QUIC/TLS security** ⚠️ **HIGH PRIORITY**
-   - Generate proper self-signed certificates using rcgen or rustls
-   - Implement proper certificate validation in client configuration
-   - Essential for secure P2P communication
+1. **Fix QUIC certificate verification** ⚠️ **HIGH PRIORITY**
+   - Implement proper certificate validation in client configuration  
+   - Replace SkipServerVerification with real certificate verification
+   - Essential for secure P2P communication (certificate generation now complete)
 
-2. **Implement proper certificate generation** - Security improvement
-   - Replace dummy certificate data with real cryptographic certificates
-   - Enable proper peer identity verification through certificates
-
-3. **Add mDNS discovery enhancement** - UX improvement  
+2. **Implement mDNS discovery enhancement** - UX improvement  
    - Replace UDP broadcast with proper mDNS for better peer discovery
    - Improves reliability and reduces network noise
 
