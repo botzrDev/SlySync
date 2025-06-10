@@ -209,6 +209,11 @@ The SlySync CLI has successfully evolved from individual components to a cohesiv
   - Need: Structured fields for better log analysis
   - Need: Configurable log levels per module
 
+## 📝 Minor Issues / Improvements
+
+- [ ] Consider further improvements to path resolution and diagnostics in `get_relative_path` and related methods in `sync.rs` (see recent changes).
+- [ ] Review static and non-static path resolution for edge cases (e.g., symlinks, non-canonicalizable paths).
+
 ## 🎯 Next Steps (Recommended Order)
 
 1. **Fix path resolution** - Critical for basic file operations

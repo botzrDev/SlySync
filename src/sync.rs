@@ -111,6 +111,7 @@ impl SyncService {
     }
 
     /// Enable optimized file change debouncing
+    #[allow(dead_code)] // Add this
     pub fn enable_debouncing(&mut self) {
         self.debounce_enabled = true;
         info!("File change debouncing enabled");
@@ -554,19 +555,41 @@ impl SyncService {
     }
     
     fn get_relative_path(&self, file_path: &Path) -> Result<String> {
-        // Normalize and canonicalize the file path
-        let file_path = file_path.canonicalize().map_err(|e| anyhow::anyhow!("Failed to canonicalize path {}: {}", file_path.display(), e))?;
+        let absolute_file_path = if file_path.is_relative() {
+            std::env::current_dir()?.join(file_path)
+        } else {
+            file_path.to_path_buf()
+        };
+
+        // Try canonicalizing the absolute path, but fall back to absolute if it fails
+        let canonicalized_file_path = match absolute_file_path.canonicalize() {
+            Ok(path) => path,
+            Err(e) => {
+                tracing::warn!("Failed to canonicalize path {}: {}. Falling back to absolute path.", absolute_file_path.display(), e);
+                absolute_file_path.clone()
+            }
+        };
+
         for folder in self.config.sync_folders() {
-            let folder_path = folder.path.canonicalize().map_err(|e| anyhow::anyhow!("Failed to canonicalize sync folder {}: {}", folder.path.display(), e))?;
-            if let Ok(relative) = file_path.strip_prefix(&folder_path) {
-                // Always use forward slashes for consistency
+            let folder_path = match folder.path.canonicalize() {
+                Ok(path) => path,
+                Err(e) => {
+                    tracing::warn!("Failed to canonicalize sync folder {}: {}. Falling back to configured path.", folder.path.display(), e);
+                    folder.path.clone()
+                }
+            };
+            // Try both canonicalized and non-canonicalized strip_prefix
+            if let Ok(relative) = canonicalized_file_path.strip_prefix(&folder_path) {
+                let rel_str = relative.iter().map(|c| c.to_string_lossy()).collect::<Vec<_>>().join("/");
+                return Ok(rel_str);
+            } else if let Ok(relative) = absolute_file_path.strip_prefix(&folder_path) {
                 let rel_str = relative.iter().map(|c| c.to_string_lossy()).collect::<Vec<_>>().join("/");
                 return Ok(rel_str);
             }
         }
-        anyhow::bail!("File not in any sync folder: {}", file_path.display())
+        anyhow::bail!("File not in any sync folder: {} (abs: {}), checked against all sync folders.", file_path.display(), absolute_file_path.display())
     }
-    
+
     fn split_into_chunks(&self, data: &[u8]) -> Vec<Vec<u8>> {
         const CHUNK_SIZE: usize = 64 * 1024; // 64KB chunks
         
@@ -576,6 +599,7 @@ impl SyncService {
     }
 
     /// Static version of process_file for use in debouncer
+    #[allow(dead_code)] // Add this
     async fn process_file_static(
         path: &Path,
         chunk_store: &Arc<ChunkStore>,
@@ -635,6 +659,7 @@ impl SyncService {
     }
 
     /// Static version of handle_file_removed for use in debouncer
+    #[allow(dead_code)] // Add this
     async fn handle_file_removed_static(
         path: &Path,
         chunk_store: &Arc<ChunkStore>,
@@ -674,12 +699,21 @@ impl SyncService {
     }
 
     /// Static version of get_relative_path for use in debouncer
+    #[allow(dead_code)] // Add this
     fn get_relative_path_static(file_path: &Path, config: &crate::config::Config) -> Result<String> {
-        // Normalize and canonicalize the file path
-        let file_path = file_path.canonicalize().map_err(|e| anyhow::anyhow!("Failed to canonicalize path {}: {}", file_path.display(), e))?;
+        let absolute_file_path = if file_path.is_relative() {
+            // Resolve relative path against the current working directory
+            std::env::current_dir()?.join(file_path)
+        } else {
+            file_path.to_path_buf()
+        };
+
+        // Canonicalize the absolute path
+        let canonicalized_file_path = absolute_file_path.canonicalize().map_err(|e| anyhow::anyhow!("Failed to canonicalize path {}: {}", absolute_file_path.display(), e))?;
+
         for folder in config.sync_folders() {
             let folder_path = folder.path.canonicalize().map_err(|e| anyhow::anyhow!("Failed to canonicalize sync folder {}: {}", folder.path.display(), e))?;
-            if let Ok(relative) = file_path.strip_prefix(&folder_path) {
+            if let Ok(relative) = canonicalized_file_path.strip_prefix(&folder_path) {
                 // Always use forward slashes for consistency
                 let rel_str = relative.iter().map(|c| c.to_string_lossy()).collect::<Vec<_>>().join("/");
                 return Ok(rel_str);
@@ -689,6 +723,7 @@ impl SyncService {
     }
 
     /// Static version of split_into_chunks for use in debouncer
+    #[allow(dead_code)] // Add this
     fn split_into_chunks_static(data: &[u8]) -> Vec<Vec<u8>> {
         const CHUNK_SIZE: usize = 64 * 1024; // 64KB chunks
         
@@ -698,6 +733,7 @@ impl SyncService {
     }
 
     /// Static version of is_chunk_referenced for use in debouncer
+    #[allow(dead_code)] // Add this
     async fn is_chunk_referenced_static(
         chunk_hash: &[u8; 32],
         file_manifests: &Arc<tokio::sync::RwLock<std::collections::HashMap<String, FileManifest>>>,
