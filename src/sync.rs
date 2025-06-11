@@ -1,6 +1,6 @@
 //! # File Synchronization Module
 //! 
-//! This module provides the core file synchronization engine for SyncCore.
+//! This module provides the core file synchronization engine for SlySync.
 //! It monitors file system changes, manages file chunks, coordinates with
 //! the P2P service for data transfer, and reconstructs files from chunks.
 //! 
@@ -1041,7 +1041,7 @@ mod tests {
         let config = create_test_config_with_folder(&temp_dir).await;
         let sync_service = SyncService::new(config).await.unwrap();
         
-        // Create a test file
+        // Create a test file in the sync folder
         let sync_folder = temp_dir.path().join("sync");
         let test_file = sync_folder.join("test.txt");
         let test_content = "Hello, this is a test file for sync processing!";

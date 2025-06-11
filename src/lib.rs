@@ -1,8 +1,8 @@
-//! # SyncCore
+//! # SlySync
 //! 
 //! A next-generation, peer-to-peer file synchronization CLI utility built in Rust.
 //! 
-//! SyncCore provides secure, decentralized file synchronization without relying on 
+//! SlySync provides secure, decentralized file synchronization without relying on 
 //! central servers. It uses modern cryptographic protocols and efficient P2P networking
 //! to keep files synchronized across multiple devices.
 //! 

@@ -21,10 +21,10 @@ fn default_watcher_polling_ms() -> u64 { 250 }
 fn default_watcher_max_events() -> usize { 500 }
 fn default_watcher_performance_monitoring() -> bool { true }
 
-/// Main configuration structure for SyncCore.
+/// Main configuration structure for SlySync.
 /// 
 /// This structure contains all the settings and state information
-/// needed to run a SyncCore node, including network settings,
+/// needed to run a SlySync node, including network settings,
 /// bandwidth limits, and the list of synchronized folders.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Config {
@@ -105,7 +105,7 @@ impl Config {
         let config_file = Self::config_dir()?.join("config.toml");
         
         if !config_file.exists() {
-            anyhow::bail!("SyncCore not initialized. Run 'synccore init' first.");
+            anyhow::bail!("SlySync not initialized. Run 'slysync init' first.");
         }
         
         let content = tokio::fs::read_to_string(&config_file).await?;
@@ -190,7 +190,7 @@ impl Config {
         
         let config_dir = dirs::config_dir()
             .ok_or_else(|| anyhow::anyhow!("Could not determine config directory"))?
-            .join("synccore");
+            .join("slysync");
         
         Ok(config_dir)
     }

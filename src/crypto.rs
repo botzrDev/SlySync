@@ -1,6 +1,6 @@
 //! # Cryptographic Operations
 //! 
-//! This module provides cryptographic functionality for SyncCore, including:
+//! This module provides cryptographic functionality for SlySync, including:
 //! - Ed25519 digital signatures for node identity and authentication
 //! - Invitation code generation and validation
 //! - Peer authentication and verification
@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::net::SocketAddr;
 
-/// Cryptographic identity for a SyncCore node.
+/// Cryptographic identity for a SlySync node.
 /// 
 /// Each node has a unique Ed25519 key pair that serves as its identity.
 /// The public key acts as the node ID, while the private key is used

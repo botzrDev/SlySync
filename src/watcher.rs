@@ -326,56 +326,6 @@ where
         Ok(())
     }
     
-    /// Handle a file system event (internal method)
-    async fn handle_file_event(
-        event: Event,
-        debouncer_ptr: *const FileChangeDebouncer<F>,
-        stats: &Arc<RwLock<WatcherStats>>,
-    ) -> Result<()> {
-        let start_time = Instant::now();
-        
-        // Update stats
-        {
-            let mut stats_guard = stats.write();
-            stats_guard.events_received += 1;
-        }
-        
-        // Convert notify event to our change type
-        if let Some(change_type) = FileChangeDebouncer::<F>::event_to_change_type(&event) {
-            // Process each path in the event
-            for path in &event.paths {
-                // Safety: This is safe because the debouncer lives as long as the watcher
-                // and the background task doesn't outlive the watcher
-                let debouncer = unsafe { &*debouncer_ptr };
-                
-                if let Err(e) = debouncer.handle_event(path, change_type).await {
-                    warn!("Failed to handle debounced event for {}: {}", path.display(), e);
-                }
-            }
-        } else {
-            debug!("Ignoring unsupported file event type: {:?}", event.kind);
-        }
-        
-        // Update processing latency stats
-        let processing_time = start_time.elapsed();
-        {
-            let mut stats_guard = stats.write();
-            if processing_time > stats_guard.max_processing_latency {
-                stats_guard.max_processing_latency = processing_time;
-            }
-            
-            // Update average processing latency (simple moving average)
-            let current_avg = stats_guard.average_processing_latency.as_nanos() as u64;
-            let new_sample = processing_time.as_nanos() as u64;
-            let new_avg = (current_avg * 9 + new_sample) / 10;
-            stats_guard.average_processing_latency = Duration::from_nanos(new_avg);
-        }
-        
-        debug!("Processed file event for {} paths in {:?}", event.paths.len(), processing_time);
-        
-        Ok(())
-    }
-    
     /// Perform periodic maintenance (internal method)
     async fn perform_maintenance(stats: &Arc<RwLock<WatcherStats>>, start_time: Instant) {
         // Estimate CPU usage based on processing times and frequency

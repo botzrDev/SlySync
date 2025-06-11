@@ -142,7 +142,7 @@ async fn test_performance_statistics() {
         enable_performance_monitoring: true,
     };
     
-    let (tx, mut rx) = mpsc::unbounded_channel::<PathBuf>();
+    let (tx, _rx) = mpsc::unbounded_channel::<PathBuf>();
     
     let processor = move |events: Vec<DebouncedFileEvent>| {
         let tx = tx.clone();

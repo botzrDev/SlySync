@@ -1,6 +1,6 @@
 //! # P2P Networking Module
 //! 
-//! This module provides the peer-to-peer networking capabilities for SyncCore.
+//! This module provides the peer-to-peer networking capabilities for SlySync.
 //! It handles peer discovery, secure connections using QUIC, message exchange,
 //! and file chunk transfer between peers.
 //! 

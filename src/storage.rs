@@ -1,6 +1,6 @@
 //! # Chunk-based Storage System
 //! 
-//! This module implements SyncCore's chunk-based file storage system, providing:
+//! This module implements SlySync's chunk-based file storage system, providing:
 //! - File chunking and deduplication
 //! - Content-addressed storage using BLAKE3 hashes
 //! - File manifest tracking and reconstruction
