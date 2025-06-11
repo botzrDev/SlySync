@@ -157,10 +157,10 @@ The SlySync CLI has successfully evolved into a **fully functional peer-to-peer 
   - Next: Complete full debouncing integration with actual event processing
 
 ### Resource Usage
-- [ ] **Optimize idle CPU usage**
+- [X] **Optimize idle CPU usage**
   - Target: Idle CPU usage < 1%
-  - Need: Profile and optimize hot paths
-  - Need: Efficient file system watching
+  - Added: Profile and optimize hot paths
+  - Added: Efficient file system watching
 
 ## 📋 Advanced Features
 

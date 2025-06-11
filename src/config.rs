@@ -15,6 +15,12 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
+// Default values for watcher configuration
+fn default_watcher_debounce_ms() -> u64 { 200 }
+fn default_watcher_polling_ms() -> u64 { 250 }
+fn default_watcher_max_events() -> usize { 500 }
+fn default_watcher_performance_monitoring() -> bool { true }
+
 /// Main configuration structure for SyncCore.
 /// 
 /// This structure contains all the settings and state information
@@ -28,6 +34,16 @@ pub struct Config {
     pub bandwidth_limit_down: Option<u64>,
     pub discovery_enabled: bool,
     pub sync_folders: Vec<SyncFolder>,
+    
+    // File watcher optimization settings
+    #[serde(default = "default_watcher_debounce_ms")]
+    pub watcher_debounce_ms: u64,
+    #[serde(default = "default_watcher_polling_ms")]
+    pub watcher_polling_ms: u64,
+    #[serde(default = "default_watcher_max_events")]
+    pub watcher_max_events: usize,
+    #[serde(default = "default_watcher_performance_monitoring")]
+    pub watcher_performance_monitoring: bool,
     
     #[serde(skip)]
     pub config_file_path: PathBuf,
@@ -72,6 +88,10 @@ impl Config {
             bandwidth_limit_down: None,
             discovery_enabled: true,
             sync_folders: Vec::new(),
+            watcher_debounce_ms: default_watcher_debounce_ms(),
+            watcher_polling_ms: default_watcher_polling_ms(),
+            watcher_max_events: default_watcher_max_events(),
+            watcher_performance_monitoring: default_watcher_performance_monitoring(),
             config_file_path: config_file.clone(),
             test_data_dir: None,
         };
@@ -141,6 +161,17 @@ impl Config {
         Self::config_dir().unwrap().join("identity.key")
     }
     
+    /// Create a watcher configuration from the current config settings
+    pub fn to_watcher_config(&self) -> crate::watcher::WatcherConfig {
+        crate::watcher::WatcherConfig {
+            debounce_delay: std::time::Duration::from_millis(self.watcher_debounce_ms),
+            polling_interval: std::time::Duration::from_millis(self.watcher_polling_ms),
+            max_pending_events: self.watcher_max_events,
+            max_event_age: std::time::Duration::from_secs(30), // Fixed reasonable default
+            enable_performance_monitoring: self.watcher_performance_monitoring,
+        }
+    }
+
     pub fn data_dir(&self) -> Result<PathBuf> {
         if let Some(ref test_dir) = self.test_data_dir {
             return Ok(test_dir.clone());
@@ -181,6 +212,10 @@ mod tests {
             bandwidth_limit_down: None,
             discovery_enabled: true,
             sync_folders: Vec::new(),
+            watcher_debounce_ms: default_watcher_debounce_ms(),
+            watcher_polling_ms: default_watcher_polling_ms(),
+            watcher_max_events: default_watcher_max_events(),
+            watcher_performance_monitoring: default_watcher_performance_monitoring(),
             config_file_path: config_file,
             test_data_dir: None,
         };
@@ -254,6 +289,10 @@ mod tests {
                     created_at: chrono::Utc::now(),
                 }
             ],
+            watcher_debounce_ms: default_watcher_debounce_ms(),
+            watcher_polling_ms: default_watcher_polling_ms(),
+            watcher_max_events: default_watcher_max_events(),
+            watcher_performance_monitoring: default_watcher_performance_monitoring(),
             config_file_path: PathBuf::from("/test/config.toml"),
             test_data_dir: None,
         };
@@ -272,6 +311,10 @@ mod tests {
             bandwidth_limit_down: None,
             discovery_enabled: true,
             sync_folders: Vec::new(),
+            watcher_debounce_ms: default_watcher_debounce_ms(),
+            watcher_polling_ms: default_watcher_polling_ms(),
+            watcher_max_events: default_watcher_max_events(),
+            watcher_performance_monitoring: default_watcher_performance_monitoring(),
             config_file_path: PathBuf::from("/test/config.toml"),
             test_data_dir: None,
         };

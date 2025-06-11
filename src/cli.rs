@@ -434,6 +434,19 @@ pub async fn run_daemon() -> Result<()> {
     let mut sync_service = crate::sync::SyncService::new(config.clone()).await?;
     sync_service.set_p2p_service(p2p_service.clone());
     
+    // Initialize the efficient file watcher
+    if let Err(e) = sync_service.init_watcher().await {
+        error!("Failed to initialize efficient watcher: {}", e);
+        return Err(e);
+    }
+    
+    // Show watcher configuration
+    println!("⚡ File Watcher Configuration:");
+    println!("    Debounce Delay: {}ms", config.watcher_debounce_ms);
+    println!("    Polling Interval: {}ms", config.watcher_polling_ms);
+    println!("    Max Pending Events: {}", config.watcher_max_events);
+    println!("    Performance Monitoring: {}", if config.watcher_performance_monitoring { "Enabled" } else { "Disabled" });
+    
     // Start sync service in background
     let sync_handle = tokio::spawn(async move {
         if let Err(e) = sync_service.run().await {

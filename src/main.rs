@@ -18,6 +18,7 @@ mod p2p;
 mod requests;
 mod storage;
 mod sync;
+mod watcher;
 
 use cli::{Cli, Commands};
 

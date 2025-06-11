@@ -35,6 +35,7 @@ pub mod p2p;
 pub mod requests;
 pub mod storage;
 pub mod sync;
+pub mod watcher;
 
 pub use config::Config;
 pub use crypto::Identity;

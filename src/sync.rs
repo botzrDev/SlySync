@@ -40,18 +40,18 @@
 //! ```
 
 use anyhow::Result;
-use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
+use notify::Event;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tokio::sync::mpsc;
 use tracing::{info, warn, error, debug};
 use crate::storage::{ChunkStore, FileManifest};
 use crate::requests::RequestManager;
+use crate::watcher::EfficientWatcher;
+use crate::debounce::{DebouncedFileEvent, FileChangeType};
 
 pub struct SyncService {
     config: crate::config::Config,
-    _watcher: RecommendedWatcher,
-    file_event_rx: mpsc::Receiver<notify::Result<Event>>,
+    efficient_watcher: Option<EfficientWatcher<ProcessorClosure>>,
     p2p_service: Option<Arc<crate::p2p::P2PService>>,
     chunk_store: Arc<ChunkStore>,
     #[allow(dead_code)]
@@ -60,23 +60,12 @@ pub struct SyncService {
     debounce_enabled: bool,
 }
 
+// Type alias for the closure that processes file events
+type ProcessorClosure = Box<dyn Fn(Vec<DebouncedFileEvent>) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send>> + Send + Sync>;
+
 impl SyncService {
     pub async fn new(config: crate::config::Config) -> Result<Self> {
         info!("Starting synchronization service...");
-        
-        let (file_event_tx, file_event_rx) = mpsc::channel(1000);
-        
-        let mut watcher = notify::recommended_watcher(move |res: notify::Result<Event>| {
-            if let Err(e) = file_event_tx.blocking_send(res) {
-                error!("Failed to send file event: {}", e);
-            }
-        })?;
-        
-        // Watch all configured sync folders
-        for folder in config.sync_folders() {
-            info!("Watching folder: {}", folder.path.display());
-            watcher.watch(&folder.path, RecursiveMode::Recursive)?;
-        }
         
         // Initialize storage
         let storage_dir = config.data_dir()?.join("storage");
@@ -88,16 +77,15 @@ impl SyncService {
         // Initialize file manifest tracking
         let file_manifests = Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new()));
         
-        // Load existing manifests
+        // Create the service first without the watcher
         let service = Self {
-            config,
-            _watcher: watcher,
-            file_event_rx,
+            config: config.clone(),
+            efficient_watcher: None,
             p2p_service: None,
             chunk_store,
             request_manager,
             file_manifests,
-            debounce_enabled: false, // Enable debouncing after service creation
+            debounce_enabled: false,
         };
         
         // Scan existing files and build manifests
@@ -106,8 +94,92 @@ impl SyncService {
         Ok(service)
     }
     
+    /// Initialize the efficient file system watcher
+    pub async fn init_watcher(&mut self) -> Result<()> {
+        let watcher_config = self.config.to_watcher_config();
+        
+        // Clone references for the processor closure
+        let chunk_store = self.chunk_store.clone();
+        let file_manifests = self.file_manifests.clone();
+        let p2p_service_ref = self.p2p_service.clone();
+        let config = self.config.clone();
+        
+        // Create the file event processor
+        let processor: ProcessorClosure = Box::new(move |events: Vec<DebouncedFileEvent>| {
+            let chunk_store = chunk_store.clone();
+            let file_manifests = file_manifests.clone();
+            let p2p_service = p2p_service_ref.clone();
+            let config = config.clone();
+            
+            Box::pin(async move {
+                for event in events {
+                    if let Err(e) = Self::process_debounced_event(
+                        &event,
+                        &chunk_store,
+                        &file_manifests,
+                        &p2p_service,
+                        &config,
+                    ).await {
+                        warn!("Failed to process debounced event for {}: {}", event.path.display(), e);
+                    }
+                }
+                Ok(())
+            })
+        });
+        
+        // Create the efficient watcher
+        let mut watcher = EfficientWatcher::new(watcher_config, processor).await?;
+        
+        // Watch all configured sync folders
+        for folder in self.config.sync_folders() {
+            info!("Adding path to efficient watcher: {}", folder.path.display());
+            watcher.add_path(&folder.path, true).await?;
+        }
+        
+        self.efficient_watcher = Some(watcher);
+        info!("Efficient file system watcher initialized");
+        
+        Ok(())
+    }
+    
+    /// Process a debounced file event (static method for use in closure)
+    async fn process_debounced_event(
+        event: &DebouncedFileEvent,
+        chunk_store: &Arc<ChunkStore>,
+        file_manifests: &Arc<tokio::sync::RwLock<std::collections::HashMap<String, FileManifest>>>,
+        p2p_service: &Option<Arc<crate::p2p::P2PService>>,
+        config: &crate::config::Config,
+    ) -> Result<()> {
+        info!("Processing debounced event: {:?} for {}", event.change_type, event.path.display());
+        
+        match event.change_type {
+            FileChangeType::Created | FileChangeType::Modified => {
+                if event.path.is_file() {
+                    Self::process_file_static(&event.path, chunk_store, file_manifests, p2p_service, config).await?;
+                }
+            }
+            FileChangeType::Removed => {
+                Self::handle_file_removed_static(&event.path, chunk_store, file_manifests, p2p_service, config).await?;
+            }
+        }
+        
+        Ok(())
+    }
+
     pub fn set_p2p_service(&mut self, p2p_service: Arc<crate::p2p::P2PService>) {
         self.p2p_service = Some(p2p_service);
+    }
+
+    /// Shutdown the sync service and clean up resources
+    pub async fn shutdown(&mut self) -> Result<()> {
+        info!("Shutting down sync service...");
+        
+        if let Some(mut watcher) = self.efficient_watcher.take() {
+            watcher.shutdown().await?;
+        }
+        
+        info!("Sync service shutdown complete");
+        Ok(())
     }
 
     /// Enable optimized file change debouncing
@@ -190,20 +262,29 @@ impl SyncService {
     pub async fn run(&mut self) -> Result<()> {
         info!("Synchronization service running...");
         
-        while let Some(event_result) = self.file_event_rx.recv().await {
-            match event_result {
-                Ok(event) => {
-                    if let Err(e) = self.handle_file_event(event).await {
-                        error!("Error handling file event: {}", e);
-                    }
-                }
-                Err(e) => {
-                    warn!("File system watch error: {}", e);
-                }
-            }
+        // Initialize the efficient watcher if not already done
+        if self.efficient_watcher.is_none() {
+            self.init_watcher().await?;
         }
         
-        Ok(())
+        // The efficient watcher handles file events in the background
+        // This method now primarily serves as a way to keep the service alive
+        // In a real application, you might want to handle shutdown signals here
+        
+        info!("Efficient file watcher is running in background...");
+        info!("Press Ctrl+C to stop the service");
+        
+        // Wait for shutdown signal (this is a placeholder - in real usage you'd handle signals)
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+            
+            // Optionally report statistics
+            if let Some(ref watcher) = self.efficient_watcher {
+                let stats = watcher.get_stats();
+                debug!("Watcher stats: events_received={}, cpu_estimate={:.2}%, watched_paths={}", 
+                      stats.events_received, stats.cpu_usage_estimate, stats.watched_paths);
+            }
+        }
     }
     
     async fn handle_file_event(&self, event: Event) -> Result<()> {
