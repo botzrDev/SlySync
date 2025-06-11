@@ -38,8 +38,10 @@
 //! ```
 
 use anyhow::{anyhow, Result};
+use chrono::{Datelike, Timelike, TimeZone};
 use ed25519_dalek::{VerifyingKey, Verifier};
 use quinn::{Connection, Endpoint};
+use tokio::task;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
@@ -711,17 +713,26 @@ impl P2PService {
     } // End of handle_message_static
 } // End of impl P2PService
 
-// Generate a self-signed certificate for QUIC connections
+// Generate a self-signed certificate for QUIC connections with strong security
 fn generate_self_signed_cert(identity: &crate::crypto::Identity) -> anyhow::Result<(Vec<u8>, Vec<u8>)> {
-    // Generate key pair with ECDSA P-256 algorithm (more compatible than Ed25519 for QUIC)
-    let key_pair = rcgen::KeyPair::generate()?;
+    // Use Ed25519 for key generation (stronger than ECDSA P-256)
+    let key_pair = rcgen::KeyPair::generate_for(&rcgen::PKCS_ED25519)?;
     
-    // Create certificate parameters
+    // Create certificate parameters with strict settings
     let mut params = rcgen::CertificateParams::default();
     
-    // Set validity period (1 year) - note: month is 1-indexed, day is 1-indexed
-    params.not_before = rcgen::date_time_ymd(2025, 1, 1);
-    params.not_after = rcgen::date_time_ymd(2026, 1, 1);
+    // Short validity period (7 days) to limit exposure if keys are compromised
+    let now = chrono::Utc::now();
+    params.not_before = rcgen::date_time_ymd(
+        now.year(), 
+        now.month() as u8, 
+        now.day() as u8
+    );
+    params.not_after = rcgen::date_time_ymd(
+        now.year(), 
+        now.month() as u8, 
+        (now.day() + 7) as u8 // 7 days validity
+    );
     
     // Include peer identity in certificate subject alternative names
     let peer_id = hex::encode(identity.public_key().to_bytes());
@@ -732,10 +743,21 @@ fn generate_self_signed_cert(identity: &crate::crypto::Identity) -> anyhow::Resu
         rcgen::SanType::DnsName(dns_name.try_into()?)
     ];
     
-    // Set certificate subject
+    // Set certificate subject with peer ID
     let mut distinguished_name = rcgen::DistinguishedName::new();
     distinguished_name.push(rcgen::DnType::CommonName, format!("SlySync-{}", &peer_id[..8]));
     params.distinguished_name = distinguished_name;
+    
+    // Add critical extensions
+    params.key_usages = vec![
+        rcgen::KeyUsagePurpose::DigitalSignature,
+        rcgen::KeyUsagePurpose::KeyEncipherment,
+        rcgen::KeyUsagePurpose::KeyAgreement,
+    ];
+    params.extended_key_usages = vec![
+        rcgen::ExtendedKeyUsagePurpose::ClientAuth,
+        rcgen::ExtendedKeyUsagePurpose::ServerAuth,
+    ];
     
     // Generate certificate with the key pair
     let cert = params.self_signed(&key_pair)?;
@@ -779,13 +801,24 @@ fn configure_client() -> anyhow::Result<quinn::ClientConfig> {
     Ok(client_config)
 }
 
-/// Secure certificate verifier for SlySync peer-to-peer connections
-/// Validates certificates based on peer identity and cryptographic integrity
-struct SlyPeerCertVerifier;
+/// Secure certificate verifier with certificate pinning and TOFU
+struct SlyPeerCertVerifier {
+    known_peers: Arc<parking_lot::RwLock<HashMap<String, Vec<u8>>>>, // peer_id -> cert_fingerprint
+}
 
 impl SlyPeerCertVerifier {
     fn new() -> Arc<Self> {
-        Arc::new(Self)
+        Arc::new(Self {
+            known_peers: Arc::new(parking_lot::RwLock::new(HashMap::new()))
+        })
+    }
+
+    /// Calculate SHA-256 fingerprint of certificate
+    fn cert_fingerprint(cert: &[u8]) -> Vec<u8> {
+        use sha2::{Sha256, Digest};
+        let mut hasher = Sha256::new();
+        hasher.update(cert);
+        hasher.finalize().to_vec()
     }
 }
 
@@ -799,99 +832,127 @@ impl rustls::client::ServerCertVerifier for SlyPeerCertVerifier {
         _ocsp_response: &[u8],
         now: std::time::SystemTime,
     ) -> Result<rustls::client::ServerCertVerified, rustls::Error> {
-        // Parse the certificate to validate its structure and content
+        // First validate basic certificate structure and time validity
         let cert_der = &end_entity.0;
+        let fingerprint = Self::cert_fingerprint(cert_der);
         
-        // Parse certificate using rcgen to extract information
-        let parsed_cert = match x509_parser::parse_x509_certificate(cert_der) {
-            Ok((_, cert)) => cert,
+        // Parse certificate to extract peer ID from SAN
+        let peer_id = match x509_parser::parse_x509_certificate(cert_der) {
+            Ok((_, cert)) => {
+                // Extract peer ID from DNS SAN (format: <peer_id>.slysync.local)
+                cert.subject_alternative_name()
+                    .ok()
+                    .and_then(|san| match san {
+                        x509_parser::extensions::ParsedExtension::SubjectAlternativeName(san) => {
+                            Some(san.general_names.iter().find_map(|name| match name {
+                                x509_parser::extensions::GeneralName::DNSName(dns) 
+                                    if dns.ends_with(".slysync.local") => {
+                                    dns.split('.').next().map(|s| s.to_string())
+                                }
+                                _ => None
+                            }))
+                        }
+                        _ => None
+                    })
+                    .ok_or_else(|| {
+                        rustls::Error::InvalidCertificate(
+                            rustls::CertificateError::Other(
+                                std::sync::Arc::new(std::io::Error::new(
+                                    std::io::ErrorKind::Other, 
+                                    "Missing or invalid peer ID in certificate"
+                                ))
+                            )
+                        )
+                    })?
+            }
             Err(_) => {
-                warn!("Failed to parse peer certificate - invalid format");
                 return Err(rustls::Error::InvalidCertificate(
-                    rustls::CertificateError::Other(std::sync::Arc::new(std::io::Error::new(std::io::ErrorKind::Other, "Certificate parsing failed")))
-                ));
+                    rustls::CertificateError::BadEncoding
+                ))
             }
         };
+
+        // Check if we know this peer
+        {
+            let peers = self.known_peers.read();
+            if let Some(known_fingerprint) = peers.get(&peer_id) {
+                // Verify certificate pinning
+                if &fingerprint != known_fingerprint {
+                    return Err(rustls::Error::InvalidCertificate(
+                        rustls::CertificateError::Other(
+                            std::sync::Arc::new(std::io::Error::new(
+                                std::io::ErrorKind::Other,
+                                "Certificate fingerprint does not match pinned value"
+                            ))
+                        )
+                    ));
+                }
+                return Ok(rustls::client::ServerCertVerified::assertion());
+            }
+        }
         
+        // New peer - apply TOFU (Trust On First Use)
+        {
+            let mut peers = self.known_peers.write();
+            peers.insert(peer_id, fingerprint);
+        }
+
         // Validate certificate time bounds
         let now_secs = now.duration_since(std::time::UNIX_EPOCH)
-            .map_err(|_| rustls::Error::InvalidCertificate(rustls::CertificateError::Other(std::sync::Arc::new(std::io::Error::new(std::io::ErrorKind::Other, "Invalid system time")))))?
+            .map_err(|_| rustls::Error::InvalidCertificate(
+                rustls::CertificateError::NotValidYet
+            ))?
             .as_secs() as i64;
         
-        if now_secs < parsed_cert.validity().not_before.timestamp() {
-            warn!("Peer certificate is not yet valid");
+        let cert = x509_parser::parse_x509_certificate(cert_der)
+            .map_err(|_| rustls::Error::InvalidCertificate(
+                rustls::CertificateError::BadEncoding
+            ))?
+            .1;
+
+        if now_secs < cert.validity().not_before.timestamp() {
             return Err(rustls::Error::InvalidCertificate(
-                rustls::CertificateError::Other(std::sync::Arc::new(std::io::Error::new(std::io::ErrorKind::Other, "Certificate not yet valid")))
+                rustls::CertificateError::NotValidYet
             ));
         }
         
-        if now_secs > parsed_cert.validity().not_after.timestamp() {
-            warn!("Peer certificate has expired");
+        if now_secs > cert.validity().not_after.timestamp() {
             return Err(rustls::Error::InvalidCertificate(
-                rustls::CertificateError::Other(std::sync::Arc::new(std::io::Error::new(std::io::ErrorKind::Other, "Certificate has expired")))
+                rustls::CertificateError::Expired
             ));
         }
-        
-        // Validate server name matches certificate subject alternative names
+
+        // Validate server name matches certificate
         let server_name_str = match server_name {
             rustls::ServerName::DnsName(dns_name) => dns_name.as_ref(),
             rustls::ServerName::IpAddress(_) => {
-                // For IP addresses, we'll accept the connection if the cert is structurally valid
-                // In a P2P context, IP-based connections are common
-                debug!("Accepting IP-based connection with valid certificate structure");
+                // For IP connections, we've already validated cert structure
                 return Ok(rustls::client::ServerCertVerified::assertion());
             }
             _ => {
-                warn!("Unsupported server name type");
                 return Err(rustls::Error::InvalidCertificate(
-                    rustls::CertificateError::Other(std::sync::Arc::new(std::io::Error::new(std::io::ErrorKind::Other, "Unsupported server name type")))
+                    rustls::CertificateError::Other(
+                        std::sync::Arc::new(std::io::Error::new(
+                            std::io::ErrorKind::Other,
+                            "Unsupported server name type"
+                        ))
+                    )
                 ));
             }
         };
-        
-        // Check if the server name matches any Subject Alternative Name (SAN)
-        let mut name_matches = false;
-        if let Ok(Some(san_extension)) = parsed_cert.subject_alternative_name() {
-            for san in &san_extension.value.general_names {
-                match san {
-                    x509_parser::extensions::GeneralName::DNSName(dns_name) => {
-                        if server_name_str == *dns_name {
-                            name_matches = true;
-                            break;
-                        }
-                        // Also check for SlySync peer ID pattern
-                        if dns_name.ends_with(".slysync.local") {
-                            name_matches = true;
-                            break;
-                        }
-                    }
-                    _ => continue,
-                }
-            }
-        }
-        
-        // For SlySync P2P connections, we also accept certificates with proper structure
-        // even if the exact DNS name doesn't match, as long as it follows our naming pattern
-        if !name_matches && server_name_str.ends_with(".slysync.local") {
-            name_matches = true;
-        }
-        
-        if !name_matches && server_name_str == "localhost" {
-            // Accept localhost connections for development/testing
-            name_matches = true;
-        }
-        
-        if !name_matches {
-            warn!("Server name '{}' does not match certificate", server_name_str);
+
+        // Check SAN matches expected pattern
+        if !server_name_str.ends_with(".slysync.local") && server_name_str != "localhost" {
             return Err(rustls::Error::InvalidCertificate(
-                rustls::CertificateError::Other(std::sync::Arc::new(std::io::Error::new(std::io::ErrorKind::Other, "Server name does not match certificate")))
+                rustls::CertificateError::Other(
+                    std::sync::Arc::new(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        "Invalid server name format"
+                    ))
+                )
             ));
         }
-        
-        // Validate certificate signature (self-signed is acceptable for P2P)
-        // The certificate's cryptographic integrity is validated by rustls's DER parsing
-        
-        info!("Peer certificate validation successful for '{}'", server_name_str);
+
         Ok(rustls::client::ServerCertVerified::assertion())
     }
 }

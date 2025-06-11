@@ -691,46 +691,63 @@ impl SyncService {
         // For now, use the first sync folder
         // In a more sophisticated implementation, we'd track which folder each file belongs to
         if let Some(folder) = self.config.sync_folders().first() {
-            Ok(folder.path.join(relative_path))
+            let path = folder.path.join(relative_path);
+            // Validate the resolved path is still within the sync folder
+            self.validate_sync_path(&path)?;
+            Ok(path)
         } else {
             Err(anyhow::anyhow!("No sync folders configured"))
         }
     }
     
     fn get_relative_path(&self, file_path: &Path) -> Result<String> {
-        let absolute_file_path = if file_path.is_relative() {
-            std::env::current_dir()?.join(file_path)
+        // First validate the path is within a sync folder and safe
+        let canonical_path = self.validate_sync_path(file_path)?;
+
+        // Get the containing sync folder
+        let sync_folder = self.config.sync_folders().iter()
+            .find(|sf| canonical_path.starts_with(&sf.path))
+            .ok_or(anyhow!("Path not within any sync folder after validation"))?;
+
+        // Get relative path (already validated)
+        let relative = canonical_path.strip_prefix(&sync_folder.path)?;
+        Ok(relative.iter().map(|c| c.to_string_lossy()).collect::<Vec<_>>().join("/"))
+    }
+
+    /// Strict path validation that ensures:
+    /// 1. Path can be canonicalized
+    /// 2. Path is within a sync folder
+    /// 3. No parent directory references after canonicalization
+    fn validate_sync_path(&self, path: &Path) -> Result<PathBuf> {
+        // Get absolute path if relative
+        let absolute_path = if path.is_relative() {
+            std::env::current_dir()?.join(path)
         } else {
-            file_path.to_path_buf()
+            path.to_path_buf()
         };
 
-        // Try canonicalizing the absolute path, but fall back to absolute if it fails
-        let canonicalized_file_path = match absolute_file_path.canonicalize() {
-            Ok(path) => path,
-            Err(e) => {
-                tracing::warn!("Failed to canonicalize path {}: {}. Falling back to absolute path.", absolute_file_path.display(), e);
-                absolute_file_path.clone()
-            }
-        };
+        // Canonicalize (fail if can't canonicalize)
+        let canonical_path = absolute_path.canonicalize()
+            .map_err(|e| anyhow!("Failed to canonicalize path {}: {}", path.display(), e))?;
 
+        // Check against all sync folders
         for folder in self.config.sync_folders() {
-            let folder_path = match folder.path.canonicalize() {
-                Ok(path) => path,
-                Err(e) => {
-                    tracing::warn!("Failed to canonicalize sync folder {}: {}. Falling back to configured path.", folder.path.display(), e);
-                    folder.path.clone()
+            let folder_path = folder.path.canonicalize()
+                .map_err(|e| anyhow!("Failed to canonicalize sync folder {}: {}", folder.path.display(), e))?;
+
+            if canonical_path.starts_with(&folder_path) {
+                // Check for any parent directory references in relative path
+                let relative = canonical_path.strip_prefix(&folder_path)?;
+                for component in relative.components() {
+                    if let std::path::Component::ParentDir = component {
+                        return Err(anyhow!("Path contains parent directory references after canonicalization"));
+                    }
                 }
-            };
-            // Try both canonicalized and non-canonicalized strip_prefix
-            if let Ok(relative) = canonicalized_file_path.strip_prefix(&folder_path) {
-                let rel_str = relative.iter().map(|c| c.to_string_lossy()).collect::<Vec<_>>().join("/");
-                return Ok(rel_str);
-            } else if let Ok(relative) = absolute_file_path.strip_prefix(&folder_path) {
-                let rel_str = relative.iter().map(|c| c.to_string_lossy()).collect::<Vec<_>>().join("/");
-                return Ok(rel_str);
+                return Ok(canonical_path);
             }
         }
-        anyhow::bail!("File not in any sync folder: {} (abs: {}), checked against all sync folders.", file_path.display(), absolute_file_path.display())
+
+        Err(anyhow!("Path {} is not within any sync folder", path.display()))
     }
 
     fn split_into_chunks(&self, data: &[u8]) -> Vec<Vec<u8>> {
