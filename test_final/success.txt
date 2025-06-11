@@ -1,2 +1,0 @@
-SlySync Mirror Feature Complete!
-This demonstrates the successful implementation of local folder mirroring.
