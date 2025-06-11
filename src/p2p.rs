@@ -38,10 +38,9 @@
 //! ```
 
 use anyhow::{anyhow, Result};
-use chrono::{Datelike, Timelike, TimeZone};
+use chrono::Datelike;
 use ed25519_dalek::{VerifyingKey, Verifier};
 use quinn::{Connection, Endpoint};
-use tokio::task;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
@@ -162,8 +161,8 @@ pub struct P2PService {
     endpoint: Endpoint,
     peers: Arc<RwLock<HashMap<String, PeerInfo>>>,
     connections: Arc<RwLock<HashMap<String, PeerConnection>>>,
-    message_tx: mpsc::UnboundedSender<(String, P2PMessage)>,
-    message_rx: Arc<RwLock<Option<mpsc::UnboundedReceiver<(String, P2PMessage)>>>>,
+    message_tx: mpsc::Sender<(String, P2PMessage)>,
+    message_rx: Arc<RwLock<Option<mpsc::Receiver<(String, P2PMessage)>>>>,
     pub chunk_store: Option<Arc<crate::storage::ChunkStore>>,
     pub request_manager: Option<Arc<crate::requests::RequestManager>>,
     pub sync_service: Option<Arc<crate::sync::SyncService>>,
@@ -190,7 +189,9 @@ impl P2PService {
         
         info!("P2P service listening on {}", bind_addr);
         
-        let (message_tx, message_rx) = mpsc::unbounded_channel();
+        // Use bounded channel to prevent memory exhaustion under high load
+        // Buffer size: 1000 messages should handle typical P2P traffic bursts
+        let (message_tx, message_rx) = mpsc::channel(1000);
         
         let service = Self {
             identity,
@@ -840,19 +841,20 @@ impl rustls::client::ServerCertVerifier for SlyPeerCertVerifier {
         let peer_id = match x509_parser::parse_x509_certificate(cert_der) {
             Ok((_, cert)) => {
                 // Extract peer ID from DNS SAN (format: <peer_id>.slysync.local)
-                cert.subject_alternative_name()
-                    .ok()
-                    .and_then(|san| match san {
-                        x509_parser::extensions::ParsedExtension::SubjectAlternativeName(san) => {
-                            Some(san.general_names.iter().find_map(|name| match name {
-                                x509_parser::extensions::GeneralName::DNSName(dns) 
-                                    if dns.ends_with(".slysync.local") => {
-                                    dns.split('.').next().map(|s| s.to_string())
-                                }
-                                _ => None
-                            }))
+                cert.extensions().iter()
+                    .find_map(|ext| {
+                        match ext.parsed_extension() {
+                            x509_parser::extensions::ParsedExtension::SubjectAlternativeName(san) => {
+                                san.general_names.iter().find_map(|name| match name {
+                                    x509_parser::extensions::GeneralName::DNSName(dns)
+                                        if dns.ends_with(".slysync.local") => {
+                                        dns.split('.').next().map(|s| s.to_string())
+                                    }
+                                    _ => None
+                                })
+                            }
+                            _ => None,
                         }
-                        _ => None
                     })
                     .ok_or_else(|| {
                         rustls::Error::InvalidCertificate(
@@ -1030,7 +1032,7 @@ impl P2PService {
         }
     }
     // Handle incoming connection streams
-    async fn handle_connection_streams(connection: quinn::Connection, peer_id: String, message_tx: mpsc::UnboundedSender<(String, P2PMessage)>) {
+    async fn handle_connection_streams(connection: quinn::Connection, peer_id: String, message_tx: mpsc::Sender<(String, P2PMessage)>) {
         loop {
             match connection.accept_uni().await {
                 Ok(stream) => {
@@ -1055,7 +1057,7 @@ impl P2PService {
     async fn handle_stream(
         mut stream: quinn::RecvStream,
         peer_id: String,
-        message_tx: mpsc::UnboundedSender<(String, P2PMessage)>,
+        message_tx: mpsc::Sender<(String, P2PMessage)>,
     ) -> Result<()> {
         let buffer = stream.read_to_end(1024 * 1024).await?; // 1MB limit
         
@@ -1066,8 +1068,16 @@ impl P2PService {
         match serde_json::from_slice::<P2PMessage>(&buffer) {
             Ok(message) => {
                 debug!("Received message from {}: {:?}", peer_id, message);
-                if let Err(e) = message_tx.send((peer_id, message)) {
-                    warn!("Failed to forward message to handler: {}", e);
+                // Use try_send to handle bounded channel - if full, log and drop message
+                // This prevents memory exhaustion while maintaining system stability
+                match message_tx.try_send((peer_id.clone(), message)) {
+                    Ok(_) => {},
+                    Err(mpsc::error::TrySendError::Full(_)) => {
+                        warn!("P2P message channel full, dropping message from {}", peer_id);
+                    },
+                    Err(mpsc::error::TrySendError::Closed(_)) => {
+                        warn!("P2P message channel closed, cannot forward message from {}", peer_id);
+                    }
                 }
             }
             Err(e) => {

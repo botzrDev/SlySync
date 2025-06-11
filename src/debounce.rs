@@ -138,7 +138,7 @@ where
     pending_events: Arc<RwLock<HashMap<PathBuf, DebouncedFileEvent>>>,
     stats: Arc<RwLock<DebounceStats>>,
     processor: Arc<F>,
-    shutdown_tx: Option<mpsc::UnboundedSender<()>>,
+    shutdown_tx: Option<mpsc::Sender<()>>,
 }
 
 #[allow(dead_code)]
@@ -166,7 +166,8 @@ where
 
     /// Start the background processing task
     pub fn start(&mut self) -> Result<()> {
-        let (shutdown_tx, mut shutdown_rx) = mpsc::unbounded_channel();
+        // Use small bounded channel for shutdown signal (only needs 1 slot)
+        let (shutdown_tx, mut shutdown_rx) = mpsc::channel(1);
         self.shutdown_tx = Some(shutdown_tx);
 
         let pending_events = self.pending_events.clone();

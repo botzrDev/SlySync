@@ -4,13 +4,16 @@ A next-generation, peer-to-peer file synchronization CLI utility built in Rust. 
 
 ## 🚀 Features
 
-- **Decentralized P2P Architecture**: No central servers required
+- **Decentralized P2P Architecture**: Fully implemented peer-to-peer networking
 - **End-to-End Encryption**: All peer communication is encrypted using TLS 1.3
-- **Real-time Synchronization**: Instant file change detection and propagation
+- **Real-time Synchronization**: File system watcher with debouncing for efficient change detection
 - **Cross-Platform**: Works on Linux, macOS, and Windows
-- **High Performance**: Optimized for both LAN and WAN networks
+- **Bandwidth Management**: Configurable upload/download limits
 - **Secure Authentication**: Public-key cryptography for peer authentication
 - **Offline-First**: Works on isolated networks without internet
+- **Storage Layer**: Efficient chunk-based storage system
+- **Request Handling**: Dedicated module for managing sync requests
+- **Local Mirroring**: Mirror folders locally without P2P networking
 
 ## 📦 Installation
 
@@ -80,6 +83,7 @@ This runs SlySync in the background, continuously synchronizing your folders.
 - `slysync status [--verbose]` - Show sync status and statistics
 - `slysync peers` - List connected peers
 - `slysync daemon` - Run as background service
+- `slysync mirror` - Mirror local folders without P2P
 
 ### Examples
 
@@ -120,6 +124,7 @@ created_at = "2025-06-08T10:00:00Z"
 - **Integrity**: File chunks are verified using BLAKE3 hashes
 - **Authorization**: Peers must be explicitly invited using time-limited codes
 - **Privacy**: No data is ever stored on third-party servers
+- **Debouncing**: File system events are debounced to prevent race conditions
 
 ## 🏗️ Architecture
 
@@ -128,8 +133,12 @@ SlySync is built with the following key components:
 - **CLI Module**: Command-line interface using `clap`
 - **P2P Module**: QUIC-based networking with `quinn` and `rustls`
 - **Sync Module**: Real-time file monitoring with `notify`
+- **Watcher Module**: Efficient file system change detection
 - **Crypto Module**: Ed25519 signatures and BLAKE3 hashing
 - **Config Module**: TOML-based configuration management
+- **Storage Module**: Chunk-based file storage system
+- **Bandwidth Module**: Network traffic shaping
+- **Requests Module**: Peer request handling
 
 ## 🔧 Development
 
@@ -164,8 +173,22 @@ src/
 ├── config.rs     # Configuration management
 ├── crypto.rs     # Cryptographic operations
 ├── p2p.rs        # Peer-to-peer networking
-└── sync.rs       # File synchronization engine
+├── sync.rs       # File synchronization engine
+├── watcher.rs    # File system monitoring
+├── storage.rs    # Chunk storage system
+├── requests.rs   # Peer request handling
+├── bandwidth.rs  # Network traffic management
+└── debounce.rs   # Event debouncing
 ```
+
+## 📄 Documentation
+
+Additional project documentation:
+- [FINDINGS.md](FINDINGS.md) - Research findings and design decisions
+- [IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md) - Technical implementation overview
+- [MANUAL.md](MANUAL.md) - Detailed usage manual
+- [MIRROR_FEATURE.md](MIRROR_FEATURE.md) - Mirroring functionality specs
+- [WATCHER_INTEGRATION_COMPLETE.md](WATCHER_INTEGRATION_COMPLETE.md) - Watcher module status
 
 ## 🤝 Contributing
 
@@ -183,21 +206,25 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🎯 Roadmap
 
-### Version 1.0 (Current)
+### Completed Features
 - [x] Basic CLI interface
 - [x] Configuration management
 - [x] File system monitoring
-- [ ] P2P networking implementation
-- [ ] Local network peer discovery
-- [ ] File chunking and transfer
-- [ ] Conflict resolution
+- [x] P2P networking implementation
+- [x] Local network peer discovery
+- [x] File chunking and transfer
+- [x] Watcher integration
+- [x] Bandwidth management
+
+### Current Development
+- [ ] Advanced conflict resolution
+- [ ] Performance optimizations
+- [ ] Additional test coverage
 
 ### Future Versions
 - [ ] GUI client
 - [ ] Mobile apps
 - [ ] Selective sync
-- [ ] Bandwidth throttling
-- [ ] Advanced conflict resolution
 - [ ] Plugin system
 
 ## 📞 Support

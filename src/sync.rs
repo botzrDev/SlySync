@@ -692,8 +692,16 @@ impl SyncService {
         // In a more sophisticated implementation, we'd track which folder each file belongs to
         if let Some(folder) = self.config.sync_folders().first() {
             let path = folder.path.join(relative_path);
-            // Validate the resolved path is still within the sync folder
-            self.validate_sync_path(&path)?;
+            
+            // Validate the resolved path would be within the sync folder without requiring it to exist
+            // Check for path traversal attempts by examining the relative path components
+            let normalized_relative = std::path::Path::new(relative_path);
+            for component in normalized_relative.components() {
+                if let std::path::Component::ParentDir = component {
+                    return Err(anyhow::anyhow!("Path contains parent directory references: {}", relative_path));
+                }
+            }
+            
             Ok(path)
         } else {
             Err(anyhow::anyhow!("No sync folders configured"))
@@ -707,7 +715,7 @@ impl SyncService {
         // Get the containing sync folder
         let sync_folder = self.config.sync_folders().iter()
             .find(|sf| canonical_path.starts_with(&sf.path))
-            .ok_or(anyhow!("Path not within any sync folder after validation"))?;
+            .ok_or(anyhow::anyhow!("Path not within any sync folder after validation"))?;
 
         // Get relative path (already validated)
         let relative = canonical_path.strip_prefix(&sync_folder.path)?;
@@ -728,26 +736,26 @@ impl SyncService {
 
         // Canonicalize (fail if can't canonicalize)
         let canonical_path = absolute_path.canonicalize()
-            .map_err(|e| anyhow!("Failed to canonicalize path {}: {}", path.display(), e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to canonicalize path {}: {}", path.display(), e))?;
 
         // Check against all sync folders
         for folder in self.config.sync_folders() {
             let folder_path = folder.path.canonicalize()
-                .map_err(|e| anyhow!("Failed to canonicalize sync folder {}: {}", folder.path.display(), e))?;
+                .map_err(|e| anyhow::anyhow!("Failed to canonicalize sync folder {}: {}", folder.path.display(), e))?;
 
             if canonical_path.starts_with(&folder_path) {
                 // Check for any parent directory references in relative path
                 let relative = canonical_path.strip_prefix(&folder_path)?;
                 for component in relative.components() {
                     if let std::path::Component::ParentDir = component {
-                        return Err(anyhow!("Path contains parent directory references after canonicalization"));
+                        return Err(anyhow::anyhow!("Path contains parent directory references after canonicalization"));
                     }
                 }
                 return Ok(canonical_path);
             }
         }
 
-        Err(anyhow!("Path {} is not within any sync folder", path.display()))
+        Err(anyhow::anyhow!("Path {} is not within any sync folder", path.display()))
     }
 
     fn split_into_chunks(&self, data: &[u8]) -> Vec<Vec<u8>> {

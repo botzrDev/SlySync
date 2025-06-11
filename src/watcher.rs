@@ -25,14 +25,14 @@
 //!         ..Default::default()
 //!     };
 //!     
-//!     let watcher = EfficientWatcher::new(config, |events| {
+//!     let mut watcher = EfficientWatcher::new(config, |events| {
 //!         Box::pin(async move {
 //!             println!("Processing {} file events", events.len());
 //!             Ok(())
 //!         })
 //!     }).await?;
 //!     
-//!     watcher.add_path(&PathBuf::from("/path/to/watch")).await?;
+//!     watcher.add_path(&PathBuf::from("/path/to/watch"), true).await?;
 //!     
 //!     Ok(())
 //! }
@@ -102,7 +102,7 @@ where
     watched_paths: Arc<RwLock<HashMap<PathBuf, RecursiveMode>>>,
     stats: Arc<RwLock<WatcherStats>>,
     start_time: Instant,
-    shutdown_tx: Option<mpsc::UnboundedSender<()>>,
+    shutdown_tx: Option<mpsc::Sender<()>>,
 }
 
 impl<F> EfficientWatcher<F>
@@ -140,7 +140,8 @@ where
         let config_clone = config.clone();
         
         // Start background event processing task
-        let (shutdown_tx, mut shutdown_rx) = mpsc::unbounded_channel();
+        // Use small bounded channel for shutdown signal (only needs 1 slot)
+        let (shutdown_tx, mut shutdown_rx) = mpsc::channel(1);
         
         tokio::spawn(async move {
             let mut cleanup_interval = interval(config_clone.polling_interval);

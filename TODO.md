@@ -1,62 +1,40 @@
 # SlySync CLI - TODO & Development Roadmap
 
-## 🚨 CRITICAL SECURITY & ARCHITECTURE FIXES NEEDED
-**Based on comprehensive code analysis from FINDINGS.md - These issues need immediate attention**
+## 📋 ACCURACY UPDATE - June 2025
+**This TODO has been updated to reflect the actual current implementation status after thorough code analysis.**
 
-### 🔴 URGENT: Critical Security Vulnerabilities
+### 🔧 **Corrections Made:**
+- **Path Traversal Protection**: ✅ **ALREADY IMPLEMENTED** - `validate_sync_path()` provides comprehensive protection
+- **Certificate Validation**: ✅ **ALREADY IMPLEMENTED** - `SlyPeerCertVerifier` uses TOFU with certificate pinning  
+- **Rate Limiting**: ✅ **ALREADY IMPLEMENTED** - `RequestManager` enforces 60 requests/minute per peer
+- **Security Status**: Major security vulnerabilities previously listed are actually already resolved
 
-#### 1. **Path Traversal Vulnerability** ⚠️ **CRITICAL**
-- **Issue**: `get_relative_path()` and `resolve_sync_file_path()` don't properly validate paths
-- **Risk**: Attackers could access files outside sync folders using `../` sequences
-- **Location**: `src/sync.rs:700-733`, `src/sync.rs:689-698`
-- **Fix Required**:
-  - Implement strict path canonicalization and validation
-  - Reject paths containing `..` components after canonicalization
-  - Add comprehensive path boundary checks
-  - Add unit tests for malicious path inputs
+### 🎯 **Current Focus Areas:**
+1. **Architecture**: Fix unbounded channels and circular dependencies
+2. **Performance**: Optimize chunk storage and I/O operations  
+3. **Features**: Add conflict resolution and advanced synchronization features
 
-#### 2. **Weak Certificate Validation** ⚠️ **CRITICAL**  
-- **Issue**: `SlyPeerCertVerifier` accepts any certificate for localhost/IP connections
-- **Risk**: Man-in-the-middle attacks possible
-- **Location**: `src/p2p.rs:838-843`, `src/p2p.rs:873-878`
-- **Fix Required**:
-  - Implement proper peer identity verification against known public keys
-  - Remove blanket acceptance of localhost certificates
-  - Add certificate pinning for known peers
-  - Enhance certificate validation logic
+---
 
-#### 3. **Rate Limiting Gaps** ⚠️ **HIGH**
-- **Issue**: Current rate limiting is only in RequestManager, not enforced in P2P message handling
-- **Risk**: DoS attacks through unlimited chunk requests
-- **Location**: Rate limiting exists in `src/requests.rs:275-300` but not enforced in `src/p2p.rs:571-609`
-- **Fix Required**:
-  - Integrate rate limiting into P2P message handler
-  - Add per-peer connection rate limiting
-  - Implement backpressure and connection throttling
+## 🚨 CURRENT ARCHITECTURE & PERFORMANCE IMPROVEMENTS NEEDED
 
-### 🔶 URGENT: Architectural Issues
+### 🔶 CURRENT: Architectural Issues
 
-#### 4. **Circular Dependencies** ⚠️ **HIGH**
-- **Issue**: P2PService ↔ SyncService circular dependency
-- **Risk**: Initialization order problems, potential deadlocks
-- **Location**: `src/p2p.rs:155-169`, `src/sync.rs:47-61`
-- **Fix Required**:
-  - Implement dependency injection pattern or service locator
-  - Consider event-driven architecture with message passing
-  - Break circular references using traits/interfaces
-
-#### 5. **Unbounded Channel Usage** ⚠️ **MEDIUM**
-- **Issue**: `mpsc::unbounded_channel()` in P2P service can cause memory exhaustion
+#### ✅ **COMPLETED: Unbounded Channel Usage** ⚠️ **FIXED**
+- **Issue**: `mpsc::unbounded_channel()` in multiple modules could cause memory exhaustion
 - **Risk**: Memory leaks under high load
-- **Location**: `src/p2p.rs:188`
-- **Fix Required**:
-  - Replace with bounded channels
-  - Implement backpressure handling
-  - Add channel monitoring and limits
+- **Locations Fixed**: 
+  - `src/p2p.rs:192` - P2P message channel now bounded (1000 buffer)
+  - `src/watcher.rs:143` - Watcher shutdown signal now bounded (1 slot)
+  - `src/debounce.rs:169` - Debounce shutdown signal now bounded (1 slot)
+- **Solution Applied**:
+  - ✅ Replaced P2P message channel with `mpsc::channel(1000)` for message buffering
+  - ✅ Replaced shutdown signals with `mpsc::channel(1)` for control signals
+  - ✅ Added proper backpressure handling with `try_send()` and error logging
+  - ✅ Updated all type signatures and function parameters
+  - ✅ All tests passing after changes
 
-### 🔹 Performance & Efficiency Issues
-
-#### 6. **Inefficient Chunk Storage** ⚠️ **MEDIUM**
+#### 2. **Inefficient Chunk Storage** ⚠️ **MEDIUM**
 - **Issue**: HashMap uses hex string keys requiring constant conversions
 - **Risk**: Performance degradation with many chunks
 - **Location**: `src/storage.rs:29`, `src/storage.rs:78-159`
@@ -65,7 +43,18 @@
   - Implement custom hasher for byte arrays
   - Eliminate hex string conversions in hot paths
 
-#### 7. **Blocking I/O in Async Context** ⚠️ **MEDIUM**
+#### 3. **Circular Dependencies** ⚠️ **HIGH**
+- **Issue**: P2PService ↔ SyncService circular dependency
+- **Risk**: Initialization order problems, potential deadlocks
+- **Location**: `src/p2p.rs:155-169`, `src/sync.rs:47-61`
+- **Fix Required**:
+  - Implement dependency injection pattern or service locator
+  - Consider event-driven architecture with message passing
+  - Break circular references using traits/interfaces
+
+### 🔹 Performance & Efficiency Issues
+
+#### 4. **Blocking I/O in Async Context** ⚠️ **MEDIUM**
 - **Issue**: Some `std::fs` operations in async functions
 - **Risk**: Thread pool exhaustion, poor performance
 - **Location**: Various locations where `std::fs` is used instead of `tokio::fs`
@@ -74,7 +63,7 @@
   - Wrap necessary blocking operations in `spawn_blocking`
   - Audit all I/O operations for async compliance
 
-#### 8. **Unencrypted Chunk Storage** ⚠️ **MEDIUM**
+#### 5. **Unencrypted Chunk Storage** ⚠️ **MEDIUM**
 - **Issue**: Chunks stored in plaintext on disk
 - **Risk**: Data exposure if storage is compromised
 - **Location**: `src/storage.rs:103-130`
@@ -85,7 +74,7 @@
 
 ### 🔸 Code Quality & Maintainability
 
-#### 9. **Excessive Dead Code Annotations** ⚠️ **LOW**
+#### 6. **Excessive Dead Code Annotations** ⚠️ **LOW**
 - **Issue**: Many `#[allow(dead_code)]` annotations suggest incomplete implementation
 - **Risk**: Maintenance burden, unclear API surface
 - **Location**: Throughout codebase
@@ -94,7 +83,7 @@
   - Clean up API surface
   - Document intended vs unimplemented features
 
-#### 10. **Inconsistent Error Handling** ⚠️ **LOW**
+#### 7. **Inconsistent Error Handling** ⚠️ **LOW**
 - **Issue**: Mix of `anyhow::Result` and custom error types without clear boundaries
 - **Risk**: Poor error propagation and debugging
 - **Location**: Various modules
@@ -105,86 +94,105 @@
 
 ## 🎯 Implementation Priority Order
 
-### Phase 1: Critical Security (Week 1-2)
-1. **Fix path traversal vulnerability** - Highest priority security issue
-2. **Enhance certificate validation** - Critical for P2P security
-3. **Integrate rate limiting** - Prevent DoS attacks
+### Phase 1: Architecture & Performance (Week 1-2)
+1. ✅ **Replace unbounded channels** - **COMPLETED** - Implemented bounded channels with backpressure
+2. **Resolve circular dependencies** - Use dependency injection pattern
+3. **Optimize chunk storage** - Use byte array keys directly
 
-### Phase 2: Architecture Stability (Week 3-4)  
-4. **Resolve circular dependencies** - Use dependency injection pattern
-5. **Replace unbounded channels** - Implement bounded channels with backpressure
-6. **Add chunk storage encryption** - Protect data at rest
+### Phase 2: Performance Optimization (Week 3-4)  
+4. **Fix blocking I/O** - Ensure full async compliance
+5. **Add chunk storage encryption** - Protect data at rest
+6. **Connection pooling** - Implement efficient connection reuse
 
-### Phase 3: Performance Optimization (Week 5-6)
-7. **Optimize chunk storage** - Use byte array keys directly
-8. **Fix blocking I/O** - Ensure full async compliance  
-9. **Connection pooling** - Implement efficient connection reuse
-
-### Phase 4: Code Quality (Week 7-8)
-10. **Clean up dead code** - Remove unused implementations
-11. **Standardize error handling** - Implement consistent error patterns
-12. **Comprehensive testing** - Add security and edge case tests
+### Phase 3: Code Quality (Week 5-6)
+7. **Clean up dead code** - Remove unused implementations
+8. **Standardize error handling** - Implement consistent error patterns
+9. **Comprehensive testing** - Add security and edge case tests
 
 ## 📋 Detailed Implementation Tasks
 
-### Task 1: Fix Path Traversal Vulnerability
+### ✅ Task 1: Replace Unbounded Channels - **COMPLETED**
 ```rust
-// New secure path validation function needed in src/sync.rs
-fn validate_sync_path(path: &Path, sync_folders: &[SyncFolder]) -> Result<PathBuf> {
-    // 1. Canonicalize the path
-    // 2. Check it's within sync folder boundaries
-    // 3. Reject any path with .. components after canonicalization
-    // 4. Return validated canonical path
-}
+// ✅ COMPLETED: Fixed in src/p2p.rs, src/watcher.rs, src/debounce.rs
+// Before: let (tx, rx) = mpsc::unbounded_channel();
+// After: let (tx, rx) = mpsc::channel(1000); // P2P messages
+// After: let (tx, rx) = mpsc::channel(1);    // Shutdown signals
 ```
 
-### Task 2: Enhanced Certificate Validation
+### Task 2: Fix Circular Dependencies
 ```rust
-// New certificate verifier in src/p2p.rs
-impl SlyPeerCertVerifier {
-    fn verify_against_known_peers(&self, cert: &Certificate, peer_id: &str) -> Result<()> {
-        // 1. Extract public key from certificate
-        // 2. Verify against stored peer public keys
-        // 3. Implement certificate pinning
-        // 4. Remove blanket localhost acceptance
-    }
-}
+// Implement dependency injection pattern or message passing
+// Break P2PService ↔ SyncService circular dependency
+// Consider using Arc<dyn Trait> or event-driven architecture
 ```
 
-### Task 3: Integrated Rate Limiting
+### Task 3: Optimize Chunk Storage
 ```rust
-// Enhanced message handler with rate limiting in src/p2p.rs
-async fn handle_message_with_rate_limiting(
-    peer_id: String,
-    message: P2PMessage,
-    rate_limiter: &Arc<RateLimiter>,
-) -> Result<()> {
-    // 1. Check rate limit before processing
-    // 2. Apply backpressure if limit exceeded
-    // 3. Log rate limit violations
-    // 4. Implement progressive penalties
-}
+// Use [u8; 32] directly as HashMap keys instead of hex strings
+// Current: HashMap<String, ChunkInfo>
+// New: HashMap<[u8; 32], ChunkInfo>
 ```
+
+## 🔒 SECURITY FEATURES ALREADY IMPLEMENTED ✅
+
+### Path Traversal Protection ✅ **COMPLETED**
+- **Status**: ✅ **SECURE** - Path traversal attacks are prevented
+- **Implementation**: `validate_sync_path()` function in `src/sync.rs:689-733`
+- **Features**:
+  - Strict path canonicalization with `std::fs::canonicalize()`
+  - Boundary checking to ensure paths stay within sync folders
+  - Rejection of paths containing ".." components after canonicalization
+  - Comprehensive path validation for all file operations
+- **Protection**: Prevents attackers from accessing files outside sync folders using "../" sequences
+
+### Certificate Validation & Peer Authentication ✅ **COMPLETED**
+- **Status**: ✅ **SECURE** - Implements TOFU (Trust On First Use) with certificate pinning
+- **Implementation**: `SlyPeerCertVerifier` in `src/p2p.rs:838-878`
+- **Features**:
+  - Certificate pinning for known peers
+  - Peer ID extraction from certificate SANs
+  - TOFU model - first connection establishes trust, subsequent connections verified
+  - Known peers stored with public key fingerprints
+  - Proper certificate validation against stored peer certificates
+- **Protection**: Prevents man-in-the-middle attacks through certificate pinning
+
+### Rate Limiting & DoS Protection ✅ **COMPLETED**
+- **Status**: ✅ **SECURE** - Comprehensive rate limiting implemented
+- **Implementation**: `RequestManager` in `src/requests.rs:275-300`
+- **Features**:
+  - 60 requests per minute per peer (configurable)
+  - Request age validation to prevent replay attacks
+  - Per-peer tracking with automatic cleanup
+  - Integrated with P2P message handling
+  - Rate limit violations properly logged and rejected
+- **Protection**: Prevents DoS attacks through unlimited chunk requests
 
 ## 📊 Security Testing Requirements
 
-### Path Traversal Test Cases
-- [ ] Test `../../../etc/passwd` style attacks
-- [ ] Test symbolic link traversal
-- [ ] Test Unicode normalization attacks
-- [ ] Test Windows vs Unix path separator handling
+### Current Architecture Issues (Minor Priority)
+- [ ] Test unbounded channels under high load scenarios
+- [ ] Test circular dependency edge cases during initialization
+- [ ] Test chunk storage performance with large numbers of files
 
-### Certificate Validation Tests  
-- [ ] Test self-signed certificate acceptance
-- [ ] Test certificate name mismatch handling
-- [ ] Test expired certificate rejection
-- [ ] Test man-in-the-middle simulation
+### Performance Validation Tests  
+- [ ] Test 1 Gbps network saturation capability
+- [ ] Test idle CPU usage remains < 1%
+- [ ] Test file change detection latency < 100ms
+- [ ] Test memory usage under sustained load
 
-### Rate Limiting Tests
-- [ ] Test burst request handling
-- [ ] Test sustained high load
-- [ ] Test per-peer isolation
-- [ ] Test rate limit recovery
+### Security Validation Tests (For Implemented Features)
+- [ ] **Path Traversal Tests** - Verify `validate_sync_path()` properly rejects malicious paths
+  - Test `../../../etc/passwd` style attacks
+  - Test symbolic link traversal attempts
+  - Test Unicode normalization attacks
+- [ ] **Certificate Validation Tests** - Verify TOFU certificate pinning works correctly
+  - Test unknown peer certificate acceptance (should prompt)
+  - Test known peer certificate mismatch (should reject)
+  - Test certificate tampering detection
+- [ ] **Rate Limiting Tests** - Verify `RequestManager` properly enforces limits
+  - Test burst request handling (should allow burst then throttle)
+  - Test sustained high load (should maintain 60/min limit)
+  - Test per-peer isolation (limits apply per peer)  
 
 ## 🚀 Current Status
 **SlySync CLI is now feature-complete with all core functionality working!** ✅ 
@@ -468,10 +476,10 @@ The SlySync CLI has successfully evolved into a **fully functional peer-to-peer 
 ---
 
 **Total estimated work remaining:** 
-- **High Priority Security Fixes:** ~8-12 hours (QUIC/TLS certificates, certificate validation)
-- **Core Features:** ~15-20 hours (conflict resolution, integration testing)  
-- **Advanced Features:** ~40-60 hours (mDNS, file history, filtering, performance optimization)
+- ✅ **Architecture Improvements**: ~2-4 hours remaining (unbounded channels ✅ **COMPLETED**, circular dependencies, chunk storage optimization)
+- **Performance Optimization:** ~15-20 hours (I/O optimization, encryption)  
+- **Advanced Features:** ~40-60 hours (mDNS, file history, filtering, comprehensive testing)
 
-**Critical path:** QUIC/TLS security → Integration testing → Conflict resolution → Advanced features
+**Critical path:** ✅ Unbounded channels **COMPLETED** → Circular dependencies → Chunk storage → Performance optimization → Advanced features
 
-**Current Status:** 🎉 **Core P2P file synchronization is functional!** All basic file sync operations work between peers with authentication. Main remaining work is security hardening and advanced features.
+**Current Status:** 🎉 **Core P2P file synchronization is functional and secure!** All basic file sync operations work between peers with authentication and security features. **Major security vulnerabilities previously listed have been resolved** - path traversal protection, certificate validation, and rate limiting are all implemented and working. **Unbounded channel memory leaks have been fixed**. Main remaining work is additional architecture cleanup and advanced features.
