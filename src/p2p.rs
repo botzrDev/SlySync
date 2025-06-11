@@ -802,33 +802,33 @@ impl rustls::client::ServerCertVerifier for SlyPeerCertVerifier {
         // Parse the certificate to validate its structure and content
         let cert_der = &end_entity.0;
         
-        // Parse certificate using x509-parser to extract information
+        // Parse certificate using rcgen to extract information
         let parsed_cert = match x509_parser::parse_x509_certificate(cert_der) {
             Ok((_, cert)) => cert,
             Err(_) => {
                 warn!("Failed to parse peer certificate - invalid format");
                 return Err(rustls::Error::InvalidCertificate(
-                    rustls::CertificateError::BadEncoding
+                    rustls::CertificateError::Other(std::sync::Arc::new(std::io::Error::new(std::io::ErrorKind::Other, "Certificate parsing failed")))
                 ));
             }
         };
         
         // Validate certificate time bounds
         let now_secs = now.duration_since(std::time::UNIX_EPOCH)
-            .map_err(|_| rustls::Error::InvalidCertificate(rustls::CertificateError::BadEncoding))?
+            .map_err(|_| rustls::Error::InvalidCertificate(rustls::CertificateError::Other(std::sync::Arc::new(std::io::Error::new(std::io::ErrorKind::Other, "Invalid system time")))))?
             .as_secs() as i64;
-            
+        
         if now_secs < parsed_cert.validity().not_before.timestamp() {
             warn!("Peer certificate is not yet valid");
             return Err(rustls::Error::InvalidCertificate(
-                rustls::CertificateError::NotValidYet
+                rustls::CertificateError::Other(std::sync::Arc::new(std::io::Error::new(std::io::ErrorKind::Other, "Certificate not yet valid")))
             ));
         }
         
         if now_secs > parsed_cert.validity().not_after.timestamp() {
             warn!("Peer certificate has expired");
             return Err(rustls::Error::InvalidCertificate(
-                rustls::CertificateError::Expired
+                rustls::CertificateError::Other(std::sync::Arc::new(std::io::Error::new(std::io::ErrorKind::Other, "Certificate has expired")))
             ));
         }
         
@@ -843,19 +843,19 @@ impl rustls::client::ServerCertVerifier for SlyPeerCertVerifier {
             }
             _ => {
                 warn!("Unsupported server name type");
-                return Err(rustls::Error::InvalidCertificateData(
-                    "Unsupported server name type".to_string()
+                return Err(rustls::Error::InvalidCertificate(
+                    rustls::CertificateError::Other(std::sync::Arc::new(std::io::Error::new(std::io::ErrorKind::Other, "Unsupported server name type")))
                 ));
             }
         };
         
         // Check if the server name matches any Subject Alternative Name (SAN)
         let mut name_matches = false;
-        if let Some(san_extension) = parsed_cert.subject_alternative_name() {
+        if let Ok(Some(san_extension)) = parsed_cert.subject_alternative_name() {
             for san in &san_extension.value.general_names {
                 match san {
                     x509_parser::extensions::GeneralName::DNSName(dns_name) => {
-                        if dns_name == &server_name_str {
+                        if server_name_str == *dns_name {
                             name_matches = true;
                             break;
                         }
@@ -883,8 +883,8 @@ impl rustls::client::ServerCertVerifier for SlyPeerCertVerifier {
         
         if !name_matches {
             warn!("Server name '{}' does not match certificate", server_name_str);
-            return Err(rustls::Error::InvalidCertificateData(
-                "Server name does not match certificate".to_string()
+            return Err(rustls::Error::InvalidCertificate(
+                rustls::CertificateError::Other(std::sync::Arc::new(std::io::Error::new(std::io::ErrorKind::Other, "Server name does not match certificate")))
             ));
         }
         
