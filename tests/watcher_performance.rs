@@ -1,6 +1,5 @@
 use slysync::watcher::{EfficientWatcher, WatcherConfig};
 use slysync::debounce::DebouncedFileEvent;
-use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use tempfile::TempDir;
 use tokio::fs;

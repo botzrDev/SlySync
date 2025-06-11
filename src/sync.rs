@@ -55,7 +55,6 @@ pub struct SyncService {
     efficient_watcher: Option<EfficientWatcher<ProcessorClosure>>,
     p2p_service: Option<Arc<crate::p2p::P2PService>>,
     chunk_store: Arc<ChunkStore>,
-    #[allow(dead_code)]
     request_manager: Arc<RequestManager>,
     file_manifests: Arc<tokio::sync::RwLock<std::collections::HashMap<String, FileManifest>>>,
     debounce_enabled: bool,
@@ -172,6 +171,7 @@ impl SyncService {
     }
 
     /// Shutdown the sync service and clean up resources
+    #[allow(dead_code)]
     pub async fn shutdown(&mut self) -> Result<()> {
         info!("Shutting down sync service...");
         
@@ -288,6 +288,7 @@ impl SyncService {
         }
     }
     
+    #[allow(dead_code)]
     async fn handle_file_event(&self, event: Event) -> Result<()> {
         debug!("File event: {:?}", event);
         
@@ -334,6 +335,7 @@ impl SyncService {
         Ok(())
     }
     
+    #[allow(dead_code)]
     async fn handle_file_created(&self, path: &Path) -> Result<()> {
         info!("File created: {}", path.display());
         
@@ -344,6 +346,7 @@ impl SyncService {
         Ok(())
     }
     
+    #[allow(dead_code)]
     async fn handle_file_modified(&self, path: &Path) -> Result<()> {
         info!("File modified: {}", path.display());
         
@@ -354,6 +357,7 @@ impl SyncService {
         Ok(())
     }
     
+    #[allow(dead_code)]
     async fn handle_file_removed(&self, path: &Path) -> Result<()> {
         info!("File removed: {}", path.display());
         
@@ -591,7 +595,7 @@ impl SyncService {
         };
         info!("Requesting {} missing chunks for file {}", total, file_path);
         if let Some(p2p_service) = &self.p2p_service {
-            for (i, chunk_index) in missing_chunk_indices.iter().enumerate() {
+            for (_i, chunk_index) in missing_chunk_indices.iter().enumerate() {
                 let chunk_hash = manifest.chunk_hashes[*chunk_index];
                 if let Err(e) = p2p_service.request_chunk_from_peer_secure(
                     source_peer_id,

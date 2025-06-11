@@ -418,6 +418,7 @@ where
     }
 }
 
+#[allow(dead_code)]
 /// Convert notify EventKind to our FileChangeType
 pub fn event_kind_to_change_type(kind: &EventKind) -> Option<FileChangeType> {
     match kind {
