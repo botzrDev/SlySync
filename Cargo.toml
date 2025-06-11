@@ -66,6 +66,12 @@ rcgen = "0.13.2"
 yansi = "1.0.1"
 x509-parser = "0.16"
 
+# Colored terminal output
+colored = "2.1"
+
+# Progress bars and user feedback
+indicatif = "0.17"
+
 [dev-dependencies]
 # Testing framework
 tokio-test = "0.4"

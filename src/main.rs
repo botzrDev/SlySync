@@ -6,6 +6,7 @@
 
 use anyhow::Result;
 use clap::Parser;
+use colored::*;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 mod bandwidth;
@@ -38,8 +39,7 @@ async fn main() -> Result<()> {
         .init();
 
     let cli = Cli::parse();
-
-    match cli.command {
+    if let Err(e) = match cli.command {
         Commands::Init => cli::init().await,
         Commands::Id => cli::show_id().await,
         Commands::Add { path, name } => cli::add_folder(path, name).await,
@@ -51,5 +51,9 @@ async fn main() -> Result<()> {
         Commands::Mirror { source, destination, name, daemon } => {
             cli::setup_mirror(source, destination, name, daemon).await
         },
+    } {
+        eprintln!("{} {}\n{}", "Error:".red().bold(), e.to_string().red(), "Tip: Run with --help for usage information.".yellow());
+        std::process::exit(1);
     }
+    Ok(())
 }

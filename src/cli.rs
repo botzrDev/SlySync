@@ -18,6 +18,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 use tracing::{info, warn, error};
+use colored::*;
 
 /// SlySync - A next-generation, peer-to-peer file synchronization CLI utility.
 /// 
@@ -248,10 +249,9 @@ pub async fn join_sync(code: String, path: PathBuf) -> Result<()> {
 
 pub async fn show_status(verbose: bool) -> Result<()> {
     let config = crate::config::Config::load().await?;
-    
     if config.sync_folders().is_empty() {
-        println!("No folders being synchronized.");
-        println!("Add a folder with: slysync add <path>");
+        println!("{}", "No folders being synchronized.".yellow().bold());
+        println!("{} {}", "Add a folder with:".cyan(), "slysync add <path>".bold());
         return Ok(());
     }
     
@@ -262,50 +262,52 @@ pub async fn show_status(verbose: bool) -> Result<()> {
     // Get connected peers
     let peers = p2p_service.get_connected_peers().await;
     let connected_peers = peers.iter().filter(|p| p.authenticated).count();
+    let unauth_peers = peers.len() - connected_peers;
     
-    println!("📂 Sync Status\n");
+    println!("{}\n", "📂 Sync Status".bold().underline());
     
     // Display node configuration
-    println!("🔧 Node Configuration:");
-    println!("    Node ID: {}", config.node_id);
-    println!("    Listen Port: {}", config.listen_port);
+    println!("{}", "🔧 Node Configuration:".bold());
+    println!("    Node ID: {}", config.node_id.cyan());
+    println!("    Listen Port: {}", config.listen_port.to_string().cyan());
     
     // Display bandwidth configuration
     if let Some(upload_limit) = config.bandwidth_limit_up {
-        println!("    Upload Limit: {}", format_bytes_per_sec(upload_limit));
+        println!("    Upload Limit: {}", format_bytes_per_sec(upload_limit).green());
     } else {
-        println!("    Upload Limit: Unlimited");
+        println!("    Upload Limit: {}", "Unlimited".green());
     }
     
     if let Some(download_limit) = config.bandwidth_limit_down {
-        println!("    Download Limit: {}", format_bytes_per_sec(download_limit));
+        println!("    Download Limit: {}", format_bytes_per_sec(download_limit).green());
     } else {
-        println!("    Download Limit: Unlimited");
+        println!("    Download Limit: {}", "Unlimited".green());
     }
     
-    println!("    Discovery: {}", if config.discovery_enabled { "Enabled" } else { "Disabled" });
+    println!("    Discovery: {}", if config.discovery_enabled { "Enabled".green() } else { "Disabled".red() });
     println!();
     
     // Display sync folders
     for folder in config.sync_folders() {
         let name = folder.name.as_deref().unwrap_or("unnamed");
-        println!("  {} ({})", name, folder.path.display());
+        println!("  {} {}", "📁".bold(), name.bold().cyan());
+        println!("    Path: {}", folder.path.display());
         
         // Check sync status based on folder state
         let status = if folder.path.exists() {
-            "Up to date"
+            "Up to date".green().bold()
         } else {
-            "Folder missing"
+            "Folder missing".red().bold()
         };
         println!("    Status: {}", status);
-        println!("    Peers: {} connected", connected_peers);
+        println!("    Peers: {} {}{}", connected_peers.to_string().blue().bold(), "connected".blue(), if unauth_peers > 0 { format!(" ({} unauthenticated)", unauth_peers).yellow().to_string() } else { String::new() });
         
         if verbose {
             // Count files and calculate total size
             let (file_count, total_size) = count_files_and_size(&folder.path).await;
-            println!("    Files: {}", file_count);
-            println!("    Size: {}", format_bytes(total_size));
-            println!("    Created: {}", folder.created_at.format("%Y-%m-%d %H:%M:%S UTC"));
+            println!("    Files: {}", file_count.to_string().magenta());
+            println!("    Size: {}", format_bytes(total_size).magenta());
+            println!("    Created: {}", folder.created_at.format("%Y-%m-%d %H:%M:%S UTC").to_string().dimmed());
         }
         
         println!();

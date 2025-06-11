@@ -48,6 +48,7 @@ use crate::storage::{ChunkStore, FileManifest};
 use crate::requests::RequestManager;
 use crate::watcher::EfficientWatcher;
 use crate::debounce::{DebouncedFileEvent, FileChangeType};
+use indicatif::{ProgressBar, ProgressStyle};
 
 pub struct SyncService {
     config: crate::config::Config,
@@ -470,22 +471,80 @@ impl SyncService {
         chunk_hashes: Vec<[u8; 32]>,
         peer_id: &str,
     ) -> Result<()> {
+        use std::io::Write;
+        use chrono::Utc;
         info!("Received file update from peer {}: {}", peer_id, path);
-        
         // Check if we already have this file version
-        let needs_update = {
+        let (needs_update, local_newer) = {
             let manifests = self.file_manifests.read().await;
             match manifests.get(path) {
-                Some(existing_manifest) => existing_manifest.file_hash != file_hash,
-                None => true, // New file
+                Some(existing_manifest) => {
+                    let needs_update = existing_manifest.file_hash != file_hash;
+                    let local_newer = existing_manifest.modified_at > Utc::now();
+                    (needs_update, local_newer)
+                },
+                _none => (true, false), // New file
             }
         };
-        
         if !needs_update {
             debug!("File {} is already up to date", path);
             return Ok(());
         }
-        
+        if local_newer {
+            // Conflict detected: local file is newer than incoming update
+            println!("\n⚠️  Conflict detected for file: {}", path);
+            println!("Local file was modified after the remote version.");
+            println!("Choose how to resolve:");
+            println!("  [l] Keep local version");
+            println!("  [r] Overwrite with remote version");
+            println!("  [b] Keep both (rename remote)");
+            print!("Enter choice [l/r/b]: ");
+            std::io::stdout().flush().ok();
+            let mut choice = String::new();
+            std::io::stdin().read_line(&mut choice).ok();
+            match choice.trim() {
+                "l" | "L" => {
+                    println!("Keeping local version. Ignoring remote update.");
+                    return Ok(());
+                },
+                "r" | "R" => {
+                    println!("Overwriting with remote version.");
+                    // continue to update below
+                },
+                "b" | "B" => {
+                    println!("Keeping both versions. Renaming remote file.");
+                    let new_path = format!("{}_remote_{}", path, Utc::now().timestamp());
+                    self.handle_peer_file_update_rename(&new_path, file_hash, file_size, chunk_hashes, peer_id).await?;
+                    return Ok(());
+                },
+                _ => {
+                    println!("Invalid choice. Aborting update.");
+                    return Ok(());
+                }
+            }
+        }
+        self.handle_peer_file_update_inner(path, file_hash, file_size, chunk_hashes, peer_id).await
+    }
+
+    async fn handle_peer_file_update_rename(
+        &self,
+        new_path: &str,
+        file_hash: [u8; 32],
+        file_size: u64,
+        chunk_hashes: Vec<[u8; 32]>,
+        peer_id: &str,
+    ) -> Result<()> {
+        self.handle_peer_file_update_inner(new_path, file_hash, file_size, chunk_hashes, peer_id).await
+    }
+
+    async fn handle_peer_file_update_inner(
+        &self,
+        path: &str,
+        file_hash: [u8; 32],
+        file_size: u64,
+        chunk_hashes: Vec<[u8; 32]>,
+        peer_id: &str,
+    ) -> Result<()> {
         // Create new manifest for the updated file
         let mut new_manifest = FileManifest {
             path: PathBuf::from(path),
@@ -495,23 +554,16 @@ impl SyncService {
             file_hash,
             chunks_stored: vec![false; chunk_hashes.len()],
         };
-        
-        // Check which chunks we already have
         for (chunk_index, &chunk_hash) in chunk_hashes.iter().enumerate() {
             if self.chunk_store.has_chunk(&chunk_hash) {
                 new_manifest.mark_chunk_stored(chunk_index);
             }
         }
-        
-        // Store the manifest
         {
             let mut manifests = self.file_manifests.write().await;
             manifests.insert(path.to_string(), new_manifest.clone());
         }
-        
-        // Request missing chunks from peers
         self.request_missing_chunks(path, &new_manifest, peer_id).await?;
-        
         Ok(())
     }
     
@@ -523,32 +575,38 @@ impl SyncService {
         source_peer_id: &str,
     ) -> Result<()> {
         let missing_chunk_indices = manifest.missing_chunks();
-        
-        if missing_chunk_indices.is_empty() {
-            // All chunks available, reconstruct file
+        let total = missing_chunk_indices.len();
+        if total == 0 {
             self.reconstruct_file(file_path, manifest).await?;
             return Ok(());
         }
-        
-        info!("Requesting {} missing chunks for file {}", 
-              missing_chunk_indices.len(), file_path);
-        
-        // Use P2P service to request chunks
+        let pb = if total > 1 {
+            let pb = ProgressBar::new(total as u64);
+            pb.set_style(ProgressStyle::default_bar()
+                .template("[{elapsed_precise}] {bar:40.cyan/blue} {pos}/{len} chunks ({eta})")
+                .unwrap());
+            Some(pb)
+        } else {
+            None
+        };
+        info!("Requesting {} missing chunks for file {}", total, file_path);
         if let Some(p2p_service) = &self.p2p_service {
-            for chunk_index in missing_chunk_indices {
-                let chunk_hash = manifest.chunk_hashes[chunk_index];
-                
+            for (i, chunk_index) in missing_chunk_indices.iter().enumerate() {
+                let chunk_hash = manifest.chunk_hashes[*chunk_index];
                 if let Err(e) = p2p_service.request_chunk_from_peer_secure(
                     source_peer_id,
                     chunk_hash,
-                    chunk_index as u32,
+                    *chunk_index as u32,
                 ).await {
-                    warn!("Failed to request chunk {} from peer {}: {}", 
-                          chunk_index, source_peer_id, e);
+                    warn!("Failed to request chunk {} from peer {}: {}", chunk_index, source_peer_id, e);
+                } else if let Some(pb) = &pb {
+                    pb.inc(1);
                 }
             }
         }
-        
+        if let Some(pb) = pb {
+            pb.finish_with_message("All chunks requested");
+        }
         Ok(())
     }
     
