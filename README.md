@@ -17,7 +17,17 @@ A next-generation, peer-to-peer file synchronization CLI utility built in Rust. 
 
 ## 📦 Installation
 
-### From Source
+### Automated (Recommended)
+
+```bash
+git clone https://github.com/slysync/slysync.git
+cd slysync
+./setup.sh
+```
+
+This script will check for Rust, build SlySync, and install it to your PATH. Follow the prompts if Rust is not already installed.
+
+### From Source (Manual)
 
 ```bash
 # Clone the repository
