@@ -2477,6 +2477,7 @@ dependencies = [
  "futures",
  "hex",
  "indicatif",
+ "libc",
  "mdns",
  "mockall",
  "notify",

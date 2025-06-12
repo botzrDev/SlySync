@@ -11,7 +11,7 @@
 //! - `link` - Generate a secure invitation code for sharing folders
 //! - `join` - Join a remote sync folder using an invitation code
 //! - `status` - Display status of all sync jobs
-//! - `peers` - List all connected peers
+//! - `peers' - List all connected peers
 //! - `daemon` - Run the SlySync engine as a background daemon
 
 use anyhow::Result;
@@ -91,6 +91,39 @@ pub enum Commands {
         #[arg(short, long)]
         daemon: bool,
     },
+    /// Control or query running mirror daemons
+    MirrorCtl {
+        #[command(subcommand)]
+        subcmd: MirrorCtlSubcommand,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum MirrorCtlSubcommand {
+    /// Stop a running mirror daemon by name or path
+    Stop {
+        /// Name or source path of the mirror
+        #[arg(short, long)]
+        name: Option<String>,
+        #[arg(long)]
+        source: Option<PathBuf>,
+    },
+    /// Restart a running mirror daemon by name or path
+    Restart {
+        #[arg(short, long)]
+        name: Option<String>,
+        #[arg(long)]
+        source: Option<PathBuf>,
+    },
+    /// Manually trigger a full re-sync for a mirror
+    Resync {
+        #[arg(short, long)]
+        name: Option<String>,
+        #[arg(long)]
+        source: Option<PathBuf>,
+    },
+    /// Show status of all running mirror daemons
+    Status,
 }
 
 /// Initialize SlySync configuration and generate node identity.
@@ -312,7 +345,17 @@ pub async fn show_status(verbose: bool) -> Result<()> {
         
         println!();
     }
-    
+
+    // Show running mirror daemons
+    ensure_pid_dir().ok();
+    let mirrors = list_mirror_pids();
+    if !mirrors.is_empty() {
+        println!("{}
+", "🪞 Local Mirror Daemons:".bold().underline());
+        for (name, pid) in mirrors {
+            println!("  {} (PID {})", name.cyan(), pid);
+        }
+    }
     Ok(())
 }
 
@@ -500,8 +543,11 @@ pub async fn setup_mirror(
     daemon: bool,
 ) -> Result<()> {
     tracing::info!("Setting up mirror from {} to {}", source.display(), destination.display());
-    
+    let mirror_name = name.clone().unwrap_or_else(|| source.display().to_string());
     if daemon {
+        ensure_pid_dir().ok();
+        let pidfile = mirror_pid_file(&mirror_name);
+        std::fs::write(&pidfile, std::process::id().to_string()).ok();
         // Run as daemon with continuous monitoring
         println!("🔄 Starting mirror daemon...");
         if let Some(ref name) = name {
@@ -531,6 +577,8 @@ pub async fn setup_mirror(
                 println!("Mirror daemon stopped.");
             }
         }
+        // On shutdown, remove PID file
+        let _ = std::fs::remove_file(&pidfile);
     } else {
         // Run once and exit
         println!("🔄 Running one-time mirror operation...");
@@ -906,4 +954,85 @@ mod tests {
         let result = Cli::try_parse_from(args);
         assert!(result.is_err());
     }
+}
+
+// PID management helpers for mirror daemons
+const MIRROR_PID_DIR: &str = "/tmp/slysync_mirror_pids";
+
+fn ensure_pid_dir() -> std::io::Result<()> {
+    if !std::path::Path::new(MIRROR_PID_DIR).exists() {
+        std::fs::create_dir_all(MIRROR_PID_DIR)?;
+    }
+    Ok(())
+}
+
+fn mirror_pid_file(name: &str) -> std::path::PathBuf {
+    let safe = name.replace('/', "_");
+    std::path::PathBuf::from(format!("{}/{}.pid", MIRROR_PID_DIR, safe))
+}
+
+fn list_mirror_pids() -> Vec<(String, u32)> {
+    let mut result = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(MIRROR_PID_DIR) {
+        for entry in entries.flatten() {
+            if let Some(fname) = entry.file_name().to_str() {
+                if fname.ends_with(".pid") {
+                    let name = fname.trim_end_matches(".pid").replace('_', "/");
+                    if let Ok(pidstr) = std::fs::read_to_string(entry.path()) {
+                        if let Ok(pid) = pidstr.trim().parse::<u32>() {
+                            result.push((name, pid));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    result
+}
+
+pub async fn mirror_ctl(subcmd: MirrorCtlSubcommand) -> Result<()> {
+    match subcmd {
+        MirrorCtlSubcommand::Stop { name, source } => {
+            ensure_pid_dir().ok();
+            let key = name.or_else(|| source.map(|p| p.display().to_string()));
+            if let Some(key) = key {
+                let pidfile = mirror_pid_file(&key);
+                if let Ok(pidstr) = std::fs::read_to_string(&pidfile) {
+                    if let Ok(pid) = pidstr.trim().parse::<i32>() {
+                        // Try to send SIGTERM
+                        unsafe {
+                            libc::kill(pid, libc::SIGTERM);
+                        }
+                        println!("Sent SIGTERM to mirror daemon '{}' (PID {})", key, pid);
+                        std::fs::remove_file(&pidfile).ok();
+                    } else {
+                        println!("Invalid PID in file: {}", pidfile.display());
+                    }
+                } else {
+                    println!("No running mirror daemon found for '{}'.", key);
+                }
+            } else {
+                println!("Please specify --name or --source.");
+            }
+        }
+        MirrorCtlSubcommand::Restart { name: _, source: _ } => {
+            println!("Restart not yet implemented. Please stop and start the mirror manually.");
+        }
+        MirrorCtlSubcommand::Resync { name: _, source: _ } => {
+            println!("Resync not yet implemented. Restart the mirror daemon to force a full sync.");
+        }
+        MirrorCtlSubcommand::Status => {
+            ensure_pid_dir().ok();
+            let mirrors = list_mirror_pids();
+            if mirrors.is_empty() {
+                println!("No running mirror daemons found.");
+            } else {
+                println!("Running mirror daemons:");
+                for (name, pid) in mirrors {
+                    println!("  {} (PID {})", name, pid);
+                }
+            }
+        }
+    }
+    Ok(())
 }

@@ -73,6 +73,7 @@ colored = "2.1"
 indicatif = "0.17"
 sha2 = "0.10.9"
 async-trait = "0.1.88"
+libc = "0.2.172"
 
 [dev-dependencies]
 # Testing framework

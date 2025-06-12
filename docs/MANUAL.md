@@ -295,6 +295,33 @@ Listening on port: 41337
 
 ### Local Mirror Commands
 
+### `slysync mirrorctl`
+
+Control or query running local mirror daemons.
+
+**Usage:**
+```bash
+slysync mirrorctl <subcommand> [options]
+```
+
+**Subcommands:**
+- `status` — List all running mirror daemons
+- `stop --name <name> | --source <path>` — Stop a running mirror daemon
+- `restart --name <name> | --source <path>` — Restart a mirror daemon (future)
+- `resync --name <name> | --source <path>` — Manually trigger a full re-sync (future)
+
+**Examples:**
+```bash
+# List running mirror daemons
+slysync mirrorctl status
+
+# Stop a mirror daemon by name
+slysync mirrorctl stop --name "Live Mirror"
+
+# Stop a mirror daemon by source path
+slysync mirrorctl stop --source /home/user/Documents
+```
+
 ### `slysync mirror`
 
 Mirror a local folder to another local folder with optional real-time synchronization.

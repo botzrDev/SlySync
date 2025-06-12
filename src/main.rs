@@ -21,7 +21,7 @@ mod storage;
 mod sync;
 mod watcher;
 
-use cli::{Cli, Commands};
+use cli::{Cli, Commands, mirror_ctl};
 
 /// Main entry point for the SlySync application.
 /// 
@@ -50,6 +50,9 @@ async fn main() -> Result<()> {
         Commands::Daemon => cli::run_daemon().await,
         Commands::Mirror { source, destination, name, daemon } => {
             cli::setup_mirror(source, destination, name, daemon).await
+        },
+        Commands::MirrorCtl { subcmd } => {
+            mirror_ctl(subcmd).await
         },
     } {
         eprintln!("{} {}\n{}", "Error:".red().bold(), e.to_string().red(), "Tip: Run with --help for usage information.".yellow());

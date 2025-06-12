@@ -94,6 +94,13 @@ This runs SlySync in the background, continuously synchronizing your folders.
 - `slysync peers` - List connected peers
 - `slysync daemon` - Run as background service
 - `slysync mirror` - Mirror local folders without P2P
+- `slysync mirrorctl <subcommand>` - Control or query running mirror daemons
+
+#### MirrorCtl Subcommands
+- `status` - List running mirror daemons
+- `stop --name <name> | --source <path>` - Stop a running mirror daemon
+- `restart --name <name> | --source <path>` - Restart a mirror daemon (future)
+- `resync --name <name> | --source <path>` - Manually trigger a full re-sync (future)
 
 ### Examples
 
@@ -107,6 +114,15 @@ slysync status --verbose
 
 # Run in background
 slysync daemon
+
+# Start a mirror daemon
+slysync mirror ~/Documents /backup/Documents --daemon --name "DocBackup"
+
+# List running mirror daemons
+slysync mirrorctl status
+
+# Stop a mirror daemon by name
+slysync mirrorctl stop --name "DocBackup"
 ```
 
 ## ⚙️ Configuration

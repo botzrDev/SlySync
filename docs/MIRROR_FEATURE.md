@@ -10,6 +10,7 @@ SlySync now includes a powerful local folder mirroring feature that allows you t
 - **Nested Directory Support**: Preserves complete directory structure
 - **Error Handling**: Robust error handling with clear error messages
 - **Cross-Platform**: Works on Linux, macOS, and Windows
+- **Process Control**: Start, stop, and list mirror daemons from the CLI
 
 ## Usage
 
@@ -63,12 +64,28 @@ slysync mirror ~/Media /nas/Media --name "Media Mirror"
 slysync mirror ~/.config /backup/config --daemon --name "Config Backup"
 ```
 
+### mirrorctl Subcommands
+
+- `slysync mirrorctl status` — List running mirror daemons
+- `slysync mirrorctl stop --name <NAME>` — Stop a running mirror daemon by name
+- `slysync mirrorctl stop --source <PATH>` — Stop a running mirror daemon by source path
+- `slysync mirrorctl restart ...` — Restart a mirror daemon (future)
+- `slysync mirrorctl resync ...` — Manually trigger a full re-sync (future)
+
 ## Command Options
 
 - `<SOURCE>`: Source folder path to mirror from (required)
 - `<DESTINATION>`: Destination folder path to mirror to (required)
 - `--name, -n <NAME>`: Optional human-readable name for this mirror setup
 - `--daemon, -d`: Run as a daemon with continuous monitoring
+
+### Mirror Daemon Control
+
+- `slysync mirrorctl status` — List running mirror daemons
+- `slysync mirrorctl stop --name <NAME>` — Stop a running mirror daemon by name
+- `slysync mirrorctl stop --source <PATH>` — Stop a running mirror daemon by source path
+- `slysync mirrorctl restart ...` — Restart a mirror daemon (future)
+- `slysync mirrorctl resync ...` — Manually trigger a full re-sync (future)
 
 ## Features in Detail
 
