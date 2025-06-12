@@ -138,7 +138,7 @@ slysync init
 **Example:**
 ```bash
 $ slysync init
-✅ SlySync initialized successfully!
+SlySync initialized successfully!
 Node ID: ed25519_Ax7B2Cd3Ef4Gh5Ij6Kl7Mn8Op9Qr0St1Uv2Wx3Yz4
 ```
 
@@ -173,7 +173,7 @@ slysync add <path> [--name <name>]
 **Example:**
 ```bash
 $ slysync add /home/user/Documents --name "Work Documents"
-✅ Added folder: /home/user/Documents
+Added folder: /home/user/Documents
    Alias: Work Documents
    Folder ID: 550e8400-e29b-41d4-a716-446655440001
 ```
@@ -190,10 +190,10 @@ slysync link
 **Example:**
 ```bash
 $ slysync link
-📨 Invitation code for folder 'Work Documents' (/home/user/Documents)
+Invitation code for folder 'Work Documents' (/home/user/Documents)
 SC_INV_1_ed25519_Ax7B2Cd3Ef4Gh5Ij6Kl7Mn8Op9Qr0St1Uv2Wx3Yz4_192.168.1.100:41337_exp1654567890_sig_aB3cD4eF...
 
-💡 Share this code with peers who should have access to this folder.
+Share this code with peers who should have access to this folder.
    Code expires in 24 hours for security.
 ```
 
@@ -213,7 +213,7 @@ slysync join <code> <path>
 **Example:**
 ```bash
 $ slysync join SC_INV_1_ed25519_... /home/user/SharedDocs
-✅ Joined sync folder at: /home/user/SharedDocs
+Joined sync folder at: /home/user/SharedDocs
    Starting synchronization...
 ```
 
@@ -232,7 +232,7 @@ slysync status [--verbose]
 **Example:**
 ```bash
 $ slysync status --verbose
-📂 Sync Status
+Sync Status
 
   Work Documents (/home/user/Documents)
     Status: Up to date
@@ -259,18 +259,18 @@ slysync peers
 **Example:**
 ```bash
 $ slysync peers
-🌐 Discovering Peers...
+Discovering Peers...
 
 Found 2 peer(s):
 
-1. 📡 ed25519_Bx8C3Dd4Ef5Gh6Ij7Kl8Mn9Op0Qr1St2Uv3Wx4Yz5
+1. ed25519_Bx8C3Dd4Ef5Gh6Ij7Kl8Mn9Op0Qr1St2Uv3Wx4Yz5
    Address: 192.168.1.101:41337
-   Status: 🔐 Authenticated
+   Status: Authenticated
    Last seen: 2 minutes ago
 
-2. 📡 ed25519_Cx9D4Ed5Ff6Gh7Ij8Kl9Mn0Op1Qr2St3Uv4Wx5Yz6
+2. ed25519_Cx9D4Ed5Ff6Gh7Ij8Kl9Mn0Op1Qr2St3Uv4Wx5Yz6
    Address: 192.168.1.102:41337
-   Status: 🔓 Pending
+   Status: Pending
    Last seen: just now
 ```
 
@@ -286,11 +286,11 @@ slysync daemon
 **Example:**
 ```bash
 $ slysync daemon
-🚀 SlySync daemon starting...
+SlySync daemon starting...
 Node ID: ed25519_Ax7B2Cd3Ef4Gh5Ij6Kl7Mn8Op9Qr0St1Uv2Wx3Yz4
 Listening on port: 41337
-💚 SlySync daemon is running. Press Ctrl+C to stop.
-📂 Monitoring 2 sync folder(s)
+SlySync daemon is running. Press Ctrl+C to stop.
+Monitoring 2 sync folder(s)
 ```
 
 ### Local Mirror Commands
@@ -342,11 +342,11 @@ slysync mirror <source> <destination> [--name <name>] [--daemon]
 One-time mirror operation:
 ```bash
 $ slysync mirror /home/user/Documents /backup/Documents --name "Document Backup"
-🔄 Running one-time mirror operation...
+Running one-time mirror operation...
 Mirror: Document Backup
 Source: /home/user/Documents
 Destination: /backup/Documents
-✅ Mirror completed successfully!
+Mirror completed successfully!
    Files copied: 1,234
    Total size: 567.8 MB
    Duration: 12.3 seconds
@@ -355,11 +355,11 @@ Destination: /backup/Documents
 Continuous daemon mode:
 ```bash
 $ slysync mirror /home/user/Documents /backup/Documents --daemon --name "Live Backup"
-🔄 Starting mirror daemon...
+Starting mirror daemon...
 Mirror: Live Backup
 Source: /home/user/Documents
 Destination: /backup/Documents
-💚 Mirror daemon is running. Press Ctrl+C to stop.
+Mirror daemon is running. Press Ctrl+C to stop.
 
 # Files are automatically synchronized in real-time
 # Any changes to source folder are immediately copied to destination
