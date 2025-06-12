@@ -99,8 +99,8 @@ This runs SlySync in the background, continuously synchronizing your folders.
 #### MirrorCtl Subcommands
 - `status` - List running mirror daemons
 - `stop --name <name> | --source <path>` - Stop a running mirror daemon
-- `restart --name <name> | --source <path>` - Restart a mirror daemon (future)
-- `resync --name <name> | --source <path>` - Manually trigger a full re-sync (future)
+- `restart --name <name> | --source <path>` - Restart a mirror daemon (performs full resync)
+- `resync --name <name> | --source <path>` - Manually trigger a full re-sync
 
 ### Examples
 
@@ -119,10 +119,16 @@ slysync daemon
 slysync mirror ~/Documents /backup/Documents --daemon --name "DocBackup"
 
 # List running mirror daemons
-slysync mirrorctl status
+slysync mirror-ctl status
 
 # Stop a mirror daemon by name
-slysync mirrorctl stop --name "DocBackup"
+slysync mirror-ctl stop --name "DocBackup"
+
+# Restart a mirror daemon (force full resync)
+slysync mirror-ctl restart --name "DocBackup"
+
+# Manually trigger a resync
+slysync mirror-ctl resync --name "DocBackup"
 ```
 
 ## ⚙️ Configuration

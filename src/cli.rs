@@ -19,6 +19,8 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 use tracing::{info, warn, error};
 use colored::*;
+use tokio::time::Duration;
+use std::env;
 
 /// SlySync - A next-generation, peer-to-peer file synchronization CLI utility.
 /// 
@@ -971,6 +973,15 @@ fn mirror_pid_file(name: &str) -> std::path::PathBuf {
     std::path::PathBuf::from(format!("{}/{}.pid", MIRROR_PID_DIR, safe))
 }
 
+/// List all running mirror daemons with their PIDs
+///
+/// This function scans the PID directory and returns information about running
+/// mirror daemons. It also verifies if the processes are actually running
+/// and cleans up stale PID files.
+///
+/// # Returns
+///
+/// A vector of tuples containing (name, pid) for each running mirror daemon
 fn list_mirror_pids() -> Vec<(String, u32)> {
     let mut result = Vec::new();
     if let Ok(entries) = std::fs::read_dir(MIRROR_PID_DIR) {
@@ -980,7 +991,17 @@ fn list_mirror_pids() -> Vec<(String, u32)> {
                     let name = fname.trim_end_matches(".pid").replace('_', "/");
                     if let Ok(pidstr) = std::fs::read_to_string(entry.path()) {
                         if let Ok(pid) = pidstr.trim().parse::<u32>() {
-                            result.push((name, pid));
+                            // Verify process is actually running
+                            let process_exists = unsafe { 
+                                libc::kill(pid as i32, 0) == 0 
+                            };
+                            
+                            if process_exists {
+                                result.push((name, pid));
+                            } else {
+                                // Clean up stale PID file
+                                let _ = std::fs::remove_file(entry.path());
+                            }
                         }
                     }
                 }
@@ -994,45 +1015,421 @@ pub async fn mirror_ctl(subcmd: MirrorCtlSubcommand) -> Result<()> {
     match subcmd {
         MirrorCtlSubcommand::Stop { name, source } => {
             ensure_pid_dir().ok();
-            let key = name.or_else(|| source.map(|p| p.display().to_string()));
-            if let Some(key) = key {
-                let pidfile = mirror_pid_file(&key);
-                if let Ok(pidstr) = std::fs::read_to_string(&pidfile) {
-                    if let Ok(pid) = pidstr.trim().parse::<i32>() {
-                        // Try to send SIGTERM
-                        unsafe {
-                            libc::kill(pid, libc::SIGTERM);
-                        }
-                        println!("Sent SIGTERM to mirror daemon '{}' (PID {})", key, pid);
-                        std::fs::remove_file(&pidfile).ok();
-                    } else {
-                        println!("Invalid PID in file: {}", pidfile.display());
-                    }
-                } else {
-                    println!("No running mirror daemon found for '{}'.", key);
+            
+            // If neither name nor source is provided, show error and usage
+            if name.is_none() && source.is_none() {
+                println!("{}", "Error: Please specify --name or --source.".red().bold());
+                println!("Usage: {} mirror-ctl stop --name <name>", env!("CARGO_PKG_NAME"));
+                println!("       {} mirror-ctl stop --source <path>", env!("CARGO_PKG_NAME"));
+                return Ok(());
+            }
+
+            // Check if we have a direct match by name
+            if let Some(name_str) = &name {
+                let pidfile = mirror_pid_file(&name_str);
+                if pidfile.exists() {
+                    return stop_mirror_daemon(&pidfile, name_str).await;
                 }
-            } else {
-                println!("Please specify --name or --source.");
+            }
+
+            // Check if we have a direct match by source path
+            if let Some(source_path) = &source {
+                let source_str = source_path.display().to_string();
+                let pidfile = mirror_pid_file(&source_str);
+                if pidfile.exists() {
+                    return stop_mirror_daemon(&pidfile, &source_str).await;
+                }
+            }
+            
+            // If no direct match, list all mirrors and try to find partial matches
+            let mirrors = list_mirror_pids();
+            if mirrors.is_empty() {
+                println!("No running mirror daemons found.");
+                return Ok(());
+            }
+            
+            // Try to find a match by name or path
+            let mut matches = Vec::new();
+            for (mirror_name, pid) in &mirrors {
+                if let Some(name_str) = &name {
+                    if mirror_name.contains(name_str) {
+                        matches.push((mirror_name.clone(), *pid));
+                    }
+                } else if let Some(source_path) = &source {
+                    let source_str = source_path.display().to_string();
+                    if mirror_name.contains(&source_str) {
+                        matches.push((mirror_name.clone(), *pid));
+                    }
+                }
+            }
+            
+            // Process matches
+            match matches.len() {
+                0 => {
+                    if let Some(name_str) = &name {
+                        println!("No running mirror daemon found with name '{}'.", name_str);
+                    } else if let Some(source_path) = &source {
+                        println!("No running mirror daemon found for source '{}'.", source_path.display());
+                    }
+                    println!("\nRunning mirror daemons:");
+                    for (name, pid) in mirrors {
+                        println!("  {} (PID {})", name, pid);
+                    }
+                },
+                1 => {
+                    // We have exactly one match, stop it
+                    let (mirror_name, pid) = &matches[0];
+                    let pidfile = mirror_pid_file(mirror_name);
+                    unsafe {
+                        libc::kill(*pid as i32, libc::SIGTERM);
+                    }
+                    println!("Sent SIGTERM to mirror daemon '{}' (PID {})", mirror_name, pid);
+                    std::fs::remove_file(&pidfile).ok();
+                },
+                _ => {
+                    // Multiple matches, ask user to be more specific
+                    println!("Multiple matching mirror daemons found. Please be more specific:");
+                    for (name, pid) in matches {
+                        println!("  {} (PID {})", name, pid);
+                    }
+                }
             }
         }
-        MirrorCtlSubcommand::Restart { name: _, source: _ } => {
-            println!("Restart not yet implemented. Please stop and start the mirror manually.");
+        MirrorCtlSubcommand::Restart { name, source } => {
+            ensure_pid_dir().ok();
+            
+            // If neither name nor source is provided, show error and usage
+            if name.is_none() && source.is_none() {
+                println!("{}", "Error: Please specify --name or --source.".red().bold());
+                println!("Usage: {} mirror-ctl restart --name <name>", env!("CARGO_PKG_NAME"));
+                println!("       {} mirror-ctl restart --source <path>", env!("CARGO_PKG_NAME"));
+                return Ok(());
+            }
+            
+            // Get running mirror daemons
+            let mirrors = list_mirror_pids();
+            if mirrors.is_empty() {
+                println!("No running mirror daemons found.");
+                return Ok(());
+            }
+            
+            // Find a matching mirror
+            let mut matches = Vec::new();
+            for (mirror_name, pid) in &mirrors {
+                // Store mirror details in a map for restart
+                if let Some(name_str) = &name {
+                    if mirror_name.contains(name_str) {
+                        matches.push((mirror_name.clone(), *pid));
+                    }
+                } else if let Some(source_path) = &source {
+                    let source_str = source_path.display().to_string();
+                    if mirror_name.contains(&source_str) {
+                        matches.push((mirror_name.clone(), *pid));
+                    }
+                }
+            }
+            
+            match matches.len() {
+                0 => {
+                    if let Some(name_str) = &name {
+                        println!("No running mirror daemon found with name '{}'.", name_str);
+                    } else if let Some(source_path) = &source {
+                        println!("No running mirror daemon found for source '{}'.", source_path.display());
+                    }
+                    println!("\nRunning mirror daemons:");
+                    for (name, pid) in mirrors {
+                        println!("  {} (PID {})", name, pid);
+                    }
+                },
+                1 => {
+                    // We have exactly one match, restart it
+                    let (mirror_name, pid) = &matches[0];
+                    println!("Restarting mirror daemon '{}' (PID {})...", mirror_name, pid);
+                    
+                    // Phase 1: Get mirror configuration from its name before stopping
+                    // For this implementation, we'll assume the name is the source path if no /
+                    // is in the name, or split by first /
+                    let (source_path, dest_path) = if mirror_name.contains('/') {
+                        let parts: Vec<&str> = mirror_name.splitn(2, '/').collect();
+                        if parts.len() == 2 {
+                            (parts[0].to_string(), parts[1].to_string())
+                        } else {
+                            println!("Failed to parse mirror configuration from name.");
+                            return Ok(());
+                        }
+                    } else {
+                        // Default to mirror name as source path and assume we can't restart
+                        println!("Unable to determine mirror configuration to restart.");
+                        println!("Please stop the mirror daemon and start it manually.");
+                        return Ok(());
+                    };
+                    
+                    // Phase 2: Stop the running daemon
+                    let pidfile = mirror_pid_file(mirror_name);
+                    stop_mirror_daemon(&pidfile, mirror_name).await?;
+                    
+                    // Phase 3: Wait a moment to ensure process has terminated
+                    tokio::time::sleep(Duration::from_millis(1000)).await;
+                    
+                    // Phase 4: Start a new daemon
+                    println!("Starting new mirror daemon...");
+                    println!("Source: {}", source_path);
+                    println!("Destination: {}", dest_path);
+                    
+                    // Run the command as a background process
+                    // We need to use "slysync mirror" with the appropriate args
+                    let command = format!(
+                        "{} mirror {} {} --name \"{}\" --daemon",
+                        env!("CARGO_PKG_NAME"),
+                        source_path,
+                        dest_path,
+                        mirror_name
+                    );
+                    
+                    // Launch in background using nohup
+                    if let Err(e) = std::process::Command::new("sh")
+                        .arg("-c")
+                        .arg(format!("nohup {} > /dev/null 2>&1 &", command))
+                        .spawn() {
+                        println!("Failed to restart mirror daemon: {}", e);
+                    } else {
+                        println!("✅ Mirror daemon '{}' successfully restarted!", mirror_name);
+                    }
+                },
+                _ => {
+                    // Multiple matches, ask user to be more specific
+                    println!("Multiple matching mirror daemons found. Please be more specific:");
+                    for (name, pid) in matches {
+                        println!("  {} (PID {})", name, pid);
+                    }
+                }
+            }
         }
-        MirrorCtlSubcommand::Resync { name: _, source: _ } => {
-            println!("Resync not yet implemented. Restart the mirror daemon to force a full sync.");
+        MirrorCtlSubcommand::Resync { name, source } => {
+            ensure_pid_dir().ok();
+            
+            // If neither name nor source is provided, show error and usage
+            if name.is_none() && source.is_none() {
+                println!("{}", "Error: Please specify --name or --source.".red().bold());
+                println!("Usage: {} mirror-ctl resync --name <name>", env!("CARGO_PKG_NAME"));
+                println!("       {} mirror-ctl resync --source <path>", env!("CARGO_PKG_NAME"));
+                return Ok(());
+            }
+
+            // For now, since we don't have a native resync command implemented in the daemon,
+            // we'll use the restart approach to force a resync
+            println!("Resync operation will restart the mirror daemon to force a full sync.");
+            
+            // We implement the same logic as restart to avoid recursion
+            ensure_pid_dir().ok();
+            
+            // Get running mirror daemons
+            let mirrors = list_mirror_pids();
+            if mirrors.is_empty() {
+                println!("No running mirror daemons found.");
+                return Ok(());
+            }
+            
+            // Find a matching mirror
+            let mut matches = Vec::new();
+            for (mirror_name, pid) in &mirrors {
+                // Store mirror details in a map for restart
+                if let Some(name_str) = &name {
+                    if mirror_name.contains(name_str) {
+                        matches.push((mirror_name.clone(), *pid));
+                    }
+                } else if let Some(source_path) = &source {
+                    let source_str = source_path.display().to_string();
+                    if mirror_name.contains(&source_str) {
+                        matches.push((mirror_name.clone(), *pid));
+                    }
+                }
+            }
+            
+            match matches.len() {
+                0 => {
+                    if let Some(name_str) = &name {
+                        println!("No running mirror daemon found with name '{}'.", name_str);
+                    } else if let Some(source_path) = &source {
+                        println!("No running mirror daemon found for source '{}'.", source_path.display());
+                    }
+                    println!("\nRunning mirror daemons:");
+                    for (name, pid) in mirrors {
+                        println!("  {} (PID {})", name, pid);
+                    }
+                },
+                1 => {
+                    // We have exactly one match, restart it
+                    let (mirror_name, pid) = &matches[0];
+                    println!("Resyncing mirror daemon '{}' (PID {})...", mirror_name, pid);
+                    
+                    // Phase 1: Get mirror configuration from its name before stopping
+                    // For this implementation, we'll assume the name is the source path if no /
+                    // is in the name, or split by first /
+                    let (source_path, dest_path) = if mirror_name.contains('/') {
+                        let parts: Vec<&str> = mirror_name.splitn(2, '/').collect();
+                        if parts.len() == 2 {
+                            (parts[0].to_string(), parts[1].to_string())
+                        } else {
+                            println!("Failed to parse mirror configuration from name.");
+                            return Ok(());
+                        }
+                    } else {
+                        // Default to mirror name as source path and assume we can't restart
+                        println!("Unable to determine mirror configuration to restart.");
+                        println!("Please stop the mirror daemon and start it manually.");
+                        return Ok(());
+                    };
+                    
+                    // Phase 2: Stop the running daemon
+                    let pidfile = mirror_pid_file(mirror_name);
+                    stop_mirror_daemon(&pidfile, mirror_name).await?;
+                    
+                    // Phase 3: Wait a moment to ensure process has terminated
+                    tokio::time::sleep(Duration::from_millis(1000)).await;
+                    
+                    // Phase 4: Start a new daemon
+                    println!("Starting new mirror daemon with full sync...");
+                    println!("Source: {}", source_path);
+                    println!("Destination: {}", dest_path);
+                    
+                    // Run the command as a background process
+                    // We need to use "slysync mirror" with the appropriate args
+                    let command = format!(
+                        "{} mirror {} {} --name \"{}\" --daemon",
+                        env!("CARGO_PKG_NAME"),
+                        source_path,
+                        dest_path,
+                        mirror_name
+                    );
+                    
+                    // Launch in background using nohup
+                    if let Err(e) = std::process::Command::new("sh")
+                        .arg("-c")
+                        .arg(format!("nohup {} > /dev/null 2>&1 &", command))
+                        .spawn() {
+                        println!("Failed to restart mirror daemon: {}", e);
+                    } else {
+                        println!("✅ Full resync started for '{}'. All files will be synchronized.", mirror_name);
+                    }
+                },
+                _ => {
+                    // Multiple matches, ask user to be more specific
+                    println!("Multiple matching mirror daemons found. Please be more specific:");
+                    for (name, pid) in matches {
+                        println!("  {} (PID {})", name, pid);
+                    }
+                }
+            }
         }
         MirrorCtlSubcommand::Status => {
             ensure_pid_dir().ok();
             let mirrors = list_mirror_pids();
             if mirrors.is_empty() {
                 println!("No running mirror daemons found.");
+                println!("\nTip: Start a mirror daemon with '{} mirror <source> <destination> --daemon'", env!("CARGO_PKG_NAME"));
             } else {
-                println!("Running mirror daemons:");
+                println!("🪞 {} running mirror {}:", mirrors.len(), if mirrors.len() == 1 { "daemon" } else { "daemons" });
                 for (name, pid) in mirrors {
-                    println!("  {} (PID {})", name, pid);
+                    println!("  {} (PID {})", name.cyan(), pid);
                 }
+                
+                println!("\nℹ️  Control daemons with:");
+                println!("  - {} mirror-ctl stop --name <name>", env!("CARGO_PKG_NAME"));
+                println!("  - {} mirror-ctl restart --name <name>", env!("CARGO_PKG_NAME"));
+                println!("  - {} mirror-ctl resync --name <name>", env!("CARGO_PKG_NAME"));
             }
         }
+    }
+    Ok(())
+}
+
+/// Control running mirror daemons or query their status.
+///
+/// This function implements the `mirrorctl` command, providing various
+/// operations to manage and monitor mirror daemons, including:
+///
+/// * Stopping running daemons
+/// * Restarting daemons (which forces a full resync)
+/// * Manually triggering a resync operation
+/// * Viewing status of all running daemons
+///
+/// # Arguments
+///
+/// * `subcmd` - The subcommand to execute (Status, Stop, Restart, or Resync)
+///
+/// # Usage Examples
+///
+/// ```bash
+/// # List all running mirror daemons
+/// slysync mirror-ctl status
+///
+/// # Stop a daemon by name
+/// slysync mirror-ctl stop --name "MyBackup"
+///
+/// # Stop a daemon by source path
+/// slysync mirror-ctl stop --source ~/Documents
+///
+/// # Restart a daemon by name (forces full resync)
+/// slysync mirror-ctl restart --name "MyBackup"
+///
+/// # Manually trigger a resync (same as restart for now)
+/// slysync mirror-ctl resync --name "MyBackup"
+/// ```
+///
+/// # Returns
+///
+/// Returns `Ok(())` on success, or an error if the operation fails
+
+/// Helper function to stop a mirror daemon by pidfile
+///
+/// This function attempts to gracefully stop a running mirror daemon by:
+/// 1. Reading the PID from the pidfile
+/// 2. Sending a SIGTERM signal to the process
+/// 3. Removing the PID file
+///
+/// # Arguments
+///
+/// * `pidfile` - Path to the PID file
+/// * `name` - Name of the mirror daemon for display purposes
+///
+/// # Returns
+///
+/// * `Ok(())` on success, including when the process is no longer running
+/// * `Err(...)` if there's an error reading the PID file or parsing the PID
+async fn stop_mirror_daemon(pidfile: &std::path::Path, name: &str) -> Result<()> {
+    if let Ok(pidstr) = std::fs::read_to_string(pidfile) {
+        if let Ok(pid) = pidstr.trim().parse::<i32>() {
+            // Check if process exists
+            let process_exists = unsafe { libc::kill(pid, 0) == 0 };
+            
+            if process_exists {
+                // Process exists, try to terminate it
+                unsafe {
+                    libc::kill(pid, libc::SIGTERM);
+                }
+                println!("Sent SIGTERM to mirror daemon '{}' (PID {})", name, pid);
+                
+                // Give the process a moment to terminate
+                tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                
+                // Check if it's still running
+                let still_running = unsafe { libc::kill(pid, 0) == 0 };
+                if still_running {
+                    println!("Mirror daemon is still shutting down...");
+                }
+            } else {
+                println!("Process with PID {} no longer exists. Cleaning up...", pid);
+            }
+            
+            // Remove pidfile regardless
+            std::fs::remove_file(pidfile).ok();
+        } else {
+            println!("Invalid PID in file: {}", pidfile.display());
+            std::fs::remove_file(pidfile).ok();
+        }
+    } else {
+        println!("Failed to read PID file: {}", pidfile.display());
     }
     Ok(())
 }

@@ -204,9 +204,9 @@ impl MirrorService {
                     
                     self.remove_file(&dest_path).await?;
                 }
-                _ => {
+                other => {
                     // Handle any other events generically
-                    info!("Received other event type: {:?} for path: {}", event.kind, path.display());
+                    info!("Received other event type: {:?} for path: {}", other, path.display());
                     
                     // If the file exists in source, sync it; otherwise remove it from destination
                     if path.exists() {
@@ -343,55 +343,67 @@ impl MirrorService {
         
         // Start the scan from the root directory
         scan_directory_for_deletions(&self.config.source, &self.config.destination, 
-            Path::new(""), self).await?;
+            Path::new(""), self).await
+    }
+    
+    /// Helper function to recursively scan directories for deletions
+    fn scan_directory_for_deletions<'a>(
+        source_base: &'a Path,
+        dest_base: &'a Path, 
+        current_dir: &'a Path,
+        service: &'a MirrorService,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send + 'a>> {
+        Box::pin(async move {
+            let dest_dir = dest_base.join(current_dir);
+            
+            // Skip if destination directory doesn't exist
+            if !dest_dir.exists() {
+                return Ok(());
+            }
+            
+            let mut entries = tokio::fs::read_dir(&dest_dir).await?;
+            
+            while let Some(entry) = entries.next_entry().await? {
+                let entry_path = entry.path();
+                let rel_path = entry_path.strip_prefix(dest_base)?;
+                let source_path = source_base.join(rel_path);
+                
+                if entry_path.is_dir() {
+                    // Recursively check subdirectory
+                    scan_directory_for_deletions(source_base, dest_base, rel_path, service).await?;
+                    
+                    // Check if source directory exists
+                    if !source_path.exists() {
+                        info!("Detected deleted directory during scan: {}", source_path.display());
+                        service.remove_file(&entry_path).await?;
+                    }
+                } else {
+                    // Check if source file exists
+                    if !source_path.exists() {
+                        info!("Detected deleted file during scan: {}", source_path.display());
+                        service.remove_file(&entry_path).await?;
+                    }
+                }
+            }
+            
+            Ok(())
+        })
+    }
+            
+            Ok(())
+        }
+        
+        // Start the scan from the root paths
+        scan_directory_for_deletions(
+            &self.config.source,
+            &self.config.destination,
+            Path::new(""), // Start with empty relative path
+            &self
+        ).await?;
         
         info!("Deletion scan completed");
         Ok(())
     }
-}
-
-/// Helper function to recursively scan directories for deletions
-fn scan_directory_for_deletions<'a>(
-    source_base: &'a Path,
-    dest_base: &'a Path, 
-    current_dir: &'a Path,
-    service: &'a MirrorService,
-) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send + 'a>> {
-    Box::pin(async move {
-        let dest_dir = dest_base.join(current_dir);
-        
-        // Skip if destination directory doesn't exist
-        if !dest_dir.exists() {
-            return Ok(());
-        }
-        
-        let mut entries = tokio::fs::read_dir(&dest_dir).await?;
-        
-        while let Some(entry) = entries.next_entry().await? {
-            let entry_path = entry.path();
-            let rel_path = entry_path.strip_prefix(dest_base)?;
-            let source_path = source_base.join(rel_path);
-            
-            if entry_path.is_dir() {
-                // Recursively check subdirectory
-                scan_directory_for_deletions(source_base, dest_base, rel_path, service).await?;
-                
-                // Check if source directory exists
-                if !source_path.exists() {
-                    info!("Detected deleted directory during scan: {}", source_path.display());
-                    service.remove_file(&entry_path).await?;
-                }
-            } else {
-                // Check if source file exists
-                if !source_path.exists() {
-                    info!("Detected deleted file during scan: {}", source_path.display());
-                    service.remove_file(&entry_path).await?;
-                }
-            }
-        }
-        
-        Ok(())
-    })
 }
 
 /// Run a one-time mirror operation (non-daemon mode)

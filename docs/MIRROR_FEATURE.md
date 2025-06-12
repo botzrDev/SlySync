@@ -1,7 +1,13 @@
 # SlySync Mirror Feature
 
 ## Overview
-SlySync now includes a powerful local folder mirroring feature that allows you to sync files between two local directories without P2P networking. This is perfect for backing up files to different drives or maintaining mirrors of important directories.
+SlySync now includes a power### mirrorctl Subcommands
+
+- `slysync mirror-ctl status` — List running mirror daemons
+- `slysync mirror-ctl stop --name <n>` — Stop a running mirror daemon by name
+- `slysync mirror-ctl stop --source <PATH>` — Stop a running mirror daemon by source path
+- `slysync mirror-ctl restart --name <n>` — Restart a mirror daemon (performs a complete resync)
+- `slysync mirror-ctl resync --name <n>` — Manually trigger a full re-sync (identical to restart)al folder mirroring feature that allows you to sync files between two local directories without P2P networking. This is perfect for backing up files to different drives or maintaining mirrors of important directories.
 
 ## Features
 - **Real-time Monitoring**: Watches source directory for changes using efficient file system events
