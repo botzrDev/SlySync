@@ -52,6 +52,9 @@ use uuid::Uuid;
 
 use crate::bandwidth;
 
+// Type alias for complex message receiver type
+type MessageReceiver = Arc<RwLock<Option<mpsc::Receiver<(String, P2PMessage)>>>>;
+
 /// Protocol messages exchanged between peers
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum P2PMessage {
@@ -154,6 +157,17 @@ impl PeerConnection {
     }
 }
 
+// Helper struct to group parameters for message handling
+struct MessageHandlerContext {
+    peers: Arc<RwLock<HashMap<String, PeerInfo>>>,
+    connections: Arc<RwLock<HashMap<String, PeerConnection>>>,
+    chunk_store: Option<Arc<crate::storage::ChunkStore>>,
+    request_manager: Option<Arc<crate::requests::RequestManager>>,
+    sync_service: Option<Arc<crate::sync::SyncService>>,
+    bandwidth_manager: Option<Arc<bandwidth::BandwidthManager>>,
+    identity: crate::crypto::Identity,
+}
+
 /// Main P2P networking service
 pub struct P2PService {
     identity: crate::crypto::Identity,
@@ -162,7 +176,7 @@ pub struct P2PService {
     peers: Arc<RwLock<HashMap<String, PeerInfo>>>,
     connections: Arc<RwLock<HashMap<String, PeerConnection>>>,
     message_tx: mpsc::Sender<(String, P2PMessage)>,
-    message_rx: Arc<RwLock<Option<mpsc::Receiver<(String, P2PMessage)>>>>,
+    message_rx: MessageReceiver,
     pub chunk_store: Option<Arc<crate::storage::ChunkStore>>,
     pub request_manager: Option<Arc<crate::requests::RequestManager>>,
     pub sync_service: Option<Arc<crate::sync::SyncService>>,
@@ -450,8 +464,8 @@ impl P2PService {
     ) -> Result<Vec<u8>> {
         let request = crate::requests::messages::chunk_request(chunk_hash, chunk_index);
         
-        match self.send_secure_request(peer_id, request).await? {
-            response => match response.response_type {
+        let response = self.send_secure_request(peer_id, request).await?;
+        match response.response_type {
                 crate::requests::P2PResponseType::ChunkResponse { data, hash, chunk_id } => {
                     // Verify response integrity
                     if hash != chunk_hash || chunk_id != chunk_index {
@@ -466,14 +480,13 @@ impl P2PService {
                         return Err(anyhow!("Chunk integrity verification failed"));
                     }
                     
-                    Ok(data)
+                        Ok(data)
                 }
                 crate::requests::P2PResponseType::Error { message } => {
                     Err(anyhow!("Peer error: {}", message))
                 }
                 _ => Err(anyhow!("Unexpected response type")),
             }
-        }
     }
 
     // Private helper methods
@@ -556,42 +569,35 @@ impl P2PService {
         
         tokio::spawn(async move {
             while let Some((peer_id, message)) = message_rx.recv().await {
-                P2PService::handle_message_static(
-                    peer_id, 
-                    message, 
-                    &peers, 
-                    &connections,
-                    chunk_store.clone(),
-                    request_manager.clone(),
-                    sync_service.clone(),
-                    bandwidth_manager.clone(),
-                    identity.clone(),
-                ).await;
+                let context = MessageHandlerContext {
+                    peers: peers.clone(),
+                    connections: connections.clone(),
+                    chunk_store: chunk_store.clone(),
+                    request_manager: request_manager.clone(),
+                    sync_service: sync_service.clone(),
+                    bandwidth_manager: bandwidth_manager.clone(),
+                    identity: identity.clone(),
+                };
+                P2PService::handle_message_static(peer_id, message, context).await;
             }
         });
         Ok(())
     }
-    
+
     async fn handle_message_static(
         peer_id: String,
         message: P2PMessage,
-        _peers: &Arc<RwLock<HashMap<String, PeerInfo>>>,
-        connections: &Arc<RwLock<HashMap<String, PeerConnection>>>,
-        chunk_store: Option<Arc<crate::storage::ChunkStore>>,
-        request_manager: Option<Arc<crate::requests::RequestManager>>,
-        sync_service: Option<Arc<crate::sync::SyncService>>,
-        bandwidth_manager: Option<Arc<bandwidth::BandwidthManager>>,
-        identity: crate::crypto::Identity,
+        context: MessageHandlerContext,
     ) {
         match message {
             P2PMessage::ChunkRequest { hash, chunk_id } => {
                 info!("Received chunk request from {}: {:?}:{}", peer_id, hash, chunk_id);
-                if let Some(chunk_store) = &chunk_store {
+                if let Some(chunk_store) = &context.chunk_store {
                     if let Ok(chunk) = chunk_store.get_chunk(&hash).await {
-                        let connections = connections.read().await;
+                        let connections = context.connections.read().await;
                         if let Some(connection) = connections.get(&peer_id) {
                             // Apply upload bandwidth throttling before sending response
-                            if let Some(bw_manager) = &bandwidth_manager {
+                            if let Some(bw_manager) = &context.bandwidth_manager {
                                 if let Err(e) = bw_manager.request_upload_quota(chunk.len() as u64).await {
                                     warn!("Upload bandwidth limit exceeded, delaying chunk response to {}: {}", peer_id, e);
                                 }
@@ -617,7 +623,7 @@ impl P2PService {
                 info!("Received chunk response from {}: {:?}:{} ({} bytes)", peer_id, hash, chunk_id, data.len());
                 
                 // Apply download bandwidth throttling before processing response
-                if let Some(bw_manager) = &bandwidth_manager {
+                if let Some(bw_manager) = &context.bandwidth_manager {
                     if let Err(e) = bw_manager.request_download_quota(data.len() as u64).await {
                         warn!("Download bandwidth limit exceeded, delaying chunk processing from {}: {}", peer_id, e);
                     }
@@ -630,7 +636,7 @@ impl P2PService {
                     return;
                 }
                 
-                if let Some(request_manager) = &request_manager {
+                if let Some(request_manager) = &context.request_manager {
                     let response = crate::requests::P2PResponse {
                         request_id: format!("{}_{}", hex::encode(hash), chunk_id),
                         response_type: crate::requests::P2PResponseType::ChunkResponse { hash, chunk_id, data },
@@ -642,7 +648,7 @@ impl P2PService {
             }
             P2PMessage::FileUpdate { path, hash, size, chunks } => {
                 info!("Received file update from {}: {} ({} bytes, {} chunks)", peer_id, path, size, chunks.len());
-                if let Some(sync_service) = &sync_service {
+                if let Some(sync_service) = &context.sync_service {
                     if let Err(e) = sync_service.handle_peer_file_update(&path, hash, size, chunks, &peer_id).await {
                         warn!("Failed to handle file update from {}: {}", peer_id, e);
                     }
@@ -651,13 +657,13 @@ impl P2PService {
             P2PMessage::AuthChallenge { request_id, challenge } => {
                 info!("Received auth challenge from {} (Request ID: {})", peer_id, request_id);
                 // Respond to challenge using our private key
-                let signature = identity.sign(&challenge);
+                let signature = context.identity.sign(&challenge);
                 let response = crate::requests::AuthResponse {
                     challenge,
                     signature: signature.to_bytes().to_vec(),
                 };
                 let msg = P2PMessage::AuthResponse { request_id: request_id.clone(), response: serde_json::to_vec(&response).unwrap() };
-                let connections_guard = connections.read().await;
+                let connections_guard = context.connections.read().await;
                 if let Some(connection) = connections_guard.get(&peer_id) {
                     let _ = connection.send_message(&msg).await;
                 }
@@ -666,7 +672,7 @@ impl P2PService {
                 info!("Received auth response from {} (Request ID: {})", peer_id, request_id);
                 match serde_json::from_slice::<crate::requests::AuthResponse>(&response) {
                     Ok(auth_response) => {
-                        let mut peers_guard = _peers.write().await;
+                        let mut peers_guard = context.peers.write().await;
                         if let Some(peer_info) = peers_guard.get_mut(&peer_id) {
                             if peer_info.public_key.len() == 32 && auth_response.signature.len() == 64 {
                                 let mut pk_bytes = [0u8; 32];
@@ -683,7 +689,7 @@ impl P2PService {
                                 let sig = ed25519_dalek::Signature::from_bytes(&sig_bytes);
                                 if pk.verify(&auth_response.challenge, &sig).is_ok() {
                                     peer_info.authenticated = true;
-                                    let mut connections_guard = connections.write().await;
+                                    let mut connections_guard = context.connections.write().await;
                                     if let Some(conn) = connections_guard.get_mut(&peer_id) {
                                         conn.authenticated = true;
                                     }
@@ -704,7 +710,7 @@ impl P2PService {
             }
             P2PMessage::FileDelete { path } => {
                 info!("Received file deletion from {}: {}", peer_id, path);
-                if let Some(sync_service) = &sync_service {
+                if let Some(sync_service) = &context.sync_service {
                     if let Err(e) = sync_service.handle_peer_file_deletion(&path).await {
                         warn!("Failed to handle file deletion from {}: {}", peer_id, e);
                     }
@@ -859,8 +865,7 @@ impl rustls::client::ServerCertVerifier for SlyPeerCertVerifier {
                     .ok_or_else(|| {
                         rustls::Error::InvalidCertificate(
                             rustls::CertificateError::Other(
-                                std::sync::Arc::new(std::io::Error::new(
-                                    std::io::ErrorKind::Other, 
+                                std::sync::Arc::new(std::io::Error::other(
                                     "Missing or invalid peer ID in certificate"
                                 ))
                             )
@@ -882,8 +887,7 @@ impl rustls::client::ServerCertVerifier for SlyPeerCertVerifier {
                 if &fingerprint != known_fingerprint {
                     return Err(rustls::Error::InvalidCertificate(
                         rustls::CertificateError::Other(
-                            std::sync::Arc::new(std::io::Error::new(
-                                std::io::ErrorKind::Other,
+                            std::sync::Arc::new(std::io::Error::other(
                                 "Certificate fingerprint does not match pinned value"
                             ))
                         )
@@ -934,8 +938,7 @@ impl rustls::client::ServerCertVerifier for SlyPeerCertVerifier {
             _ => {
                 return Err(rustls::Error::InvalidCertificate(
                     rustls::CertificateError::Other(
-                        std::sync::Arc::new(std::io::Error::new(
-                            std::io::ErrorKind::Other,
+                        std::sync::Arc::new(std::io::Error::other(
                             "Unsupported server name type"
                         ))
                     )
@@ -947,8 +950,7 @@ impl rustls::client::ServerCertVerifier for SlyPeerCertVerifier {
         if !server_name_str.ends_with(".slysync.local") && server_name_str != "localhost" {
             return Err(rustls::Error::InvalidCertificate(
                 rustls::CertificateError::Other(
-                    std::sync::Arc::new(std::io::Error::new(
-                        std::io::ErrorKind::Other,
+                    std::sync::Arc::new(std::io::Error::other(
                         "Invalid server name format"
                     ))
                 )

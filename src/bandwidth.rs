@@ -148,8 +148,10 @@ impl BandwidthManager {
     /// Create new bandwidth manager with upload/download limits in bytes per second
     /// Set to 0 or None to disable throttling for that direction
     pub fn new(upload_limit: Option<u64>, download_limit: Option<u64>) -> Self {
-        let mut stats = BandwidthStats::default();
-        stats.session_start = Some(Instant::now());
+        let stats = BandwidthStats {
+            session_start: Some(Instant::now()),
+            ..Default::default()
+        };
 
         Self {
             upload_bucket: upload_limit.map(TokenBucket::new),

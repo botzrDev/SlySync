@@ -676,7 +676,7 @@ pub async fn mirror_ctl(subcmd: MirrorCtlSubcommand) -> Result<()> {
 
             // Check if we have a direct match by name
             if let Some(name_str) = &name {
-                let pidfile = mirror_pid_file(&name_str);
+                let pidfile = mirror_pid_file(name_str);
                 if pidfile.exists() {
                     return stop_mirror_daemon(&pidfile, name_str).await;
                 }
@@ -887,7 +887,7 @@ pub async fn mirror_ctl(subcmd: MirrorCtlSubcommand) -> Result<()> {
 /// # Returns
 ///
 /// Returns `Ok(())` on success, or an error if the operation fails
-
+///
 /// Helper function to stop a mirror daemon by pidfile
 ///
 /// This function attempts to gracefully stop a running mirror daemon by:
@@ -1316,8 +1316,8 @@ mod tests {
         let name = Some("test_mirror".to_string());
         // Use one-shot mode to avoid hanging
         let _ = super::setup_mirror(source.clone(), dest.clone(), name.clone(), false).await;
-        let pidfile = super::mirror_pid_file("test_mirror");
-        let configfile = super::mirror_config_file("test_mirror");
+        let _pidfile = super::mirror_pid_file("test_mirror");
+        let _configfile = super::mirror_config_file("test_mirror");
         // In one-shot mode, files may not exist after run, but config file should be created and then cleaned up
         // So we just check that the function completes and does not hang
         env::remove_var("SLYSYNC_MIRROR_PID_DIR");

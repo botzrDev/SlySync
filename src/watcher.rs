@@ -277,7 +277,7 @@ where
     /// Shutdown the watcher and clean up resources
     pub async fn shutdown(&mut self) -> Result<()> {
         if let Some(shutdown_tx) = self.shutdown_tx.take() {
-            let _ = shutdown_tx.send(());
+            std::mem::drop(shutdown_tx.send(()));
         }
         
         // Flush any remaining events

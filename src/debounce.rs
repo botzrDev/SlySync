@@ -153,15 +153,13 @@ where
 
     /// Create debouncer with custom configuration
     pub fn with_config(config: DebouncerConfig, processor: F) -> Self {
-        let debouncer = Self {
+        Self {
             config,
             pending_events: Arc::new(RwLock::new(HashMap::new())),
             stats: Arc::new(RwLock::new(DebounceStats::default())),
             processor: Arc::new(processor),
             shutdown_tx: None,
-        };
-
-        debouncer
+        }
     }
 
     /// Start the background processing task
@@ -211,37 +209,45 @@ where
             stats.events_received += 1;
         }
 
-        let mut pending = self.pending_events.write();
-        
         // Check if we need to force processing due to too many pending events
-        if pending.len() >= self.config.max_pending_events {
-            warn!("Max pending events reached ({}), forcing processing", pending.len());
-            drop(pending); // Release lock before processing
+        let should_force_process = {
+            let pending = self.pending_events.read();
+            pending.len() >= self.config.max_pending_events
+        };
+        
+        if should_force_process {
+            warn!("Max pending events reached, forcing processing");
             self.force_process_all().await?;
             return Ok(());
         }
 
-        // Update or create the event
-        match pending.get_mut(path) {
-            Some(existing_event) => {
-                // Update existing event, potentially changing the type if it's more recent
-                existing_event.update();
-                existing_event.change_type = change_type; // Latest event type wins
-                
-                let mut stats = self.stats.write();
-                stats.events_debounced += 1;
-            }
-            None => {
-                // Create new pending event
-                let event = DebouncedFileEvent::new(path.to_path_buf(), change_type);
-                pending.insert(path.to_path_buf(), event);
-            }
-        }
+        let (pending_count, events_debounced_increment) = {
+            let mut pending = self.pending_events.write();
+
+            // Update or create the event
+            let increment = match pending.get_mut(path) {
+                Some(existing_event) => {
+                    // Update existing event, potentially changing the type if it's more recent
+                    existing_event.update();
+                    existing_event.change_type = change_type; // Latest event type wins
+                    1 // Increment for debounced event
+                }
+                None => {
+                    // Create new pending event
+                    let event = DebouncedFileEvent::new(path.to_path_buf(), change_type);
+                    pending.insert(path.to_path_buf(), event);
+                    0 // No increment for new event
+                }
+            };
+
+            (pending.len(), increment)
+        };
 
         // Update current pending count in stats
         {
             let mut stats = self.stats.write();
-            stats.current_pending_events = pending.len();
+            stats.current_pending_events = pending_count;
+            stats.events_debounced += events_debounced_increment;
             
             // Update latency tracking
             let processing_time = start_time.elapsed();
@@ -256,7 +262,7 @@ where
         }
 
         debug!("Debounced file event: {} {:?} (pending: {})", 
-               path.display(), change_type, pending.len());
+               path.display(), change_type, pending_count);
 
         Ok(())
     }
@@ -291,7 +297,7 @@ where
     /// Shutdown the debouncer and process remaining events
     pub async fn shutdown(&mut self) -> Result<()> {
         if let Some(shutdown_tx) = self.shutdown_tx.take() {
-            let _ = shutdown_tx.send(());
+            std::mem::drop(shutdown_tx.send(()));
         }
 
         // Process any remaining events

@@ -86,6 +86,7 @@ struct PendingRequest {
 
 #[derive(Debug, Clone)]
 struct PeerRequestStats {
+    #[allow(dead_code)] // May be used for future rate limiting
     request_count: u32,
     last_reset: chrono::DateTime<chrono::Utc>,
     #[allow(dead_code)] // Add this
@@ -152,6 +153,15 @@ impl RequestManager {
         manager.start_cleanup_task();
         manager
     }
+}
+
+impl Default for RequestManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl RequestManager {
 
     /// Send a request and wait for response
     #[allow(dead_code)]
@@ -262,18 +272,21 @@ impl RequestManager {
     }
     
     /// Check if request ID was recently seen (prevent replay attacks)
+    #[allow(dead_code)] // May be used for future anti-replay features
     pub fn is_request_id_recent(&self, request_id: &str) -> bool {
         let recent_ids = self.recent_request_ids.read();
         recent_ids.contains(request_id)
     }
     
     /// Add request ID to recent cache
+    #[allow(dead_code)] // May be used for future anti-replay features
     pub fn mark_request_id_seen(&self, request_id: String) {
         let mut recent_ids = self.recent_request_ids.write();
         recent_ids.insert(request_id);
     }
     
     /// Check if peer is within rate limits
+    #[allow(dead_code)] // May be used for future rate limiting features
     pub fn check_rate_limit(&self, peer_id: &str) -> Result<()> {
         let mut peer_stats = self.peer_request_counts.write();
         let now = chrono::Utc::now();

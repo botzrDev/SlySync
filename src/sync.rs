@@ -595,7 +595,7 @@ impl SyncService {
         };
         info!("Requesting {} missing chunks for file {}", total, file_path);
         if let Some(p2p_service) = &self.p2p_service {
-            for (_i, chunk_index) in missing_chunk_indices.iter().enumerate() {
+            for chunk_index in missing_chunk_indices.iter() {
                 let chunk_hash = manifest.chunk_hashes[*chunk_index];
                 if let Err(e) = p2p_service.request_chunk_from_peer_secure(
                     source_peer_id,
